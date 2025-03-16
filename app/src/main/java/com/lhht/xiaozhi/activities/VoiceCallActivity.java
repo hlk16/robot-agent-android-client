@@ -1,20 +1,27 @@
 package com.lhht.xiaozhi.activities;
 
+import android.annotation.SuppressLint;
+import android.content.pm.ActivityInfo;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.widget.VideoView;
+
+import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.settings.SettingsManager;
@@ -27,6 +34,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class VoiceCallActivity extends AppCompatActivity implements WebSocketManager.WebSocketListener {
+    private VideoView videoView;
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
@@ -38,17 +46,18 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private TextView recognizedText;
     private TextView callStatusText;
     private TextView emojiText;
+    //很可能是一个自定义的类，用于表示波形视图。这个类可能继承自Android中的View类或其他视图类，用于在界面上绘制波形数据
     private WaveformView aiWaveformView;
     private WaveformView userWaveformView;
     private ImageButton muteButton;
     private ImageButton hangupButton;
     private ImageButton speakerButton;
-    
+
     private boolean isMuted = false;
     private boolean isSpeakerOn = false;
     private boolean isRecording = false;
     private boolean isPlaying = false;
-    
+
     private AudioRecord audioRecord;
     private AudioTrack audioTrack;
     private ExecutorService executorService;
@@ -64,23 +73,40 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+
         // 设置沉浸式状态栏和导航栏
+        //要全屏显示的应用场景，例如视频播放、游戏或者图片查看器。通过设置这些标志，
+        // 开发者可以确保应用的内容能够最大化地利用屏幕空间，同时保持布局的稳定性和一致性
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN
+                | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS
+                | WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION);
+
         getWindow().getDecorView().setSystemUiVisibility(
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
-            View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
-            View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                        | View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                        | View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                        | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         );
-        
+
         setContentView(R.layout.activity_voice_call);
-        
+
         initViews();
         initWebSocket();
         initAudio();
         setupListeners();
+
+        // 初始化视频播放
+        Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.reacktion);
+        videoView.setVideoURI(videoUri);
+        videoView.setOnPreparedListener(mp -> {
+            mp.setLooping(true);
+            mp.start();
+        });
     }
 
     private void initViews() {
+        videoView = findViewById(R.id.videoBackground);
         aiMessageText = findViewById(R.id.aiMessageText);
         recognizedText = findViewById(R.id.recognizedText);
         callStatusText = findViewById(R.id.callStatusText);
@@ -91,7 +117,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         hangupButton = findViewById(R.id.hangupButton);
         speakerButton = findViewById(R.id.speakerButton);
     }
-
+    //WebSocket连接的Java方法。它通常用于Android应用程序中，用于建立与服务器的WebSocket通信
     private void initWebSocket() {
         // 从MainActivity获取WebSocket配置
         String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
@@ -119,14 +145,14 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         executorService = Executors.newSingleThreadExecutor();
         audioExecutor = Executors.newSingleThreadExecutor();
         mainHandler = new Handler(Looper.getMainLooper());
-        
+
         // 初始化Opus编解码器
         opusUtils = OpusUtils.getInstance();
         encoderHandle = opusUtils.createEncoder(SAMPLE_RATE, 1, 10);
         decoderHandle = opusUtils.createDecoder(SAMPLE_RATE, 1);
         decodedBuffer = new short[OPUS_FRAME_SIZE];
         recordBuffer = new short[OPUS_FRAME_SIZE];
-        
+
         // 初始化音频播放器
         initAudioTrack();
     }
@@ -134,19 +160,19 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private void initAudioTrack() {
         try {
             audioTrack = new AudioTrack.Builder()
-                .setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build())
-                .setAudioFormat(new AudioFormat.Builder()
-                    .setEncoding(AUDIO_FORMAT)
-                    .setSampleRate(SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build())
-                .setBufferSizeInBytes(PLAY_BUFFER_SIZE)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                .build();
+                    .setAudioAttributes(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .build())
+                    .setAudioFormat(new AudioFormat.Builder()
+                            .setEncoding(AUDIO_FORMAT)
+                            .setSampleRate(SAMPLE_RATE)
+                            .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
+                            .build())
+                    .setBufferSizeInBytes(PLAY_BUFFER_SIZE)
+                    .setTransferMode(AudioTrack.MODE_STREAM)
+                    .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
+                    .build();
         } catch (Exception e) {
             Log.e("VoiceCall", "创建AudioTrack失败", e);
         }
@@ -174,10 +200,10 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             startMessage.put("type", "start");
             startMessage.put("mode", "auto");
             startMessage.put("audio_params", new JSONObject()
-                .put("format", "opus")
-                .put("sample_rate", SAMPLE_RATE)
-                .put("channels", 1)
-                .put("frame_duration", 60));
+                    .put("format", "opus")
+                    .put("sample_rate", SAMPLE_RATE)
+                    .put("channels", 1)
+                    .put("frame_duration", 60));
             webSocketManager.sendMessage(startMessage.toString());
 
             // 开始录音
@@ -189,15 +215,17 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             updateCallStatus("开始通话失败");
         }
     }
+    //不知道为什么报错
 
+    @SuppressLint("MissingPermission")
     private void startRecording() {
         if (audioRecord == null) {
             audioRecord = new AudioRecord(
-                MediaRecorder.AudioSource.MIC,
-                SAMPLE_RATE,
-                CHANNEL_CONFIG,
-                AUDIO_FORMAT,
-                BUFFER_SIZE
+                    MediaRecorder.AudioSource.MIC,
+                    SAMPLE_RATE,
+                    CHANNEL_CONFIG,
+                    AUDIO_FORMAT,
+                    BUFFER_SIZE
             );
         }
 
@@ -205,7 +233,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             try {
                 audioRecord.startRecording();
                 byte[] buffer = new byte[BUFFER_SIZE];
-                
+
                 while (isRecording) {
                     int read = audioRecord.read(buffer, 0, BUFFER_SIZE);
                     if (read > 0 && !isMuted) {
@@ -220,7 +248,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         });
     }
-
+    //发音频
     private void sendAudioData(byte[] data, int size) {
         if (webSocketManager != null && webSocketManager.isConnected()) {
             try {
@@ -229,7 +257,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 for (int i = 0; i < samples.length; i++) {
                     samples[i] = (short) ((data[i * 2] & 0xFF) | (data[i * 2 + 1] << 8));
                 }
-                
+
                 // 编码音频数据
                 byte[] encodedData = new byte[size];
                 int encodedSize = opusUtils.encode(encoderHandle, samples, 0, encodedData);
@@ -244,21 +272,21 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         }
     }
-
+    //静音
     private void toggleMute() {
         isMuted = !isMuted;
         muteButton.setImageResource(isMuted ? R.drawable.ic_mic_off : R.drawable.ic_mic);
         updateCallStatus(isMuted ? "已静音" : "正在通话中...");
     }
-
+    //有无声音
     private void toggleSpeaker() {
         isSpeakerOn = !isSpeakerOn;
         speakerButton.setImageResource(isSpeakerOn ? R.drawable.ic_volume_up : R.drawable.ic_volume_off);
-        
+
         AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         audioManager.setSpeakerphoneOn(isSpeakerOn);
     }
-
+    //挂断
     private void endCall() {
         isRecording = false;
         if (audioRecord != null) {
@@ -273,7 +301,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         }
         finish();
     }
-
+    //打断
     private void interruptAiResponse() {
         if (webSocketManager != null && webSocketManager.isConnected()) {
             try {
@@ -286,7 +314,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         }
     }
-
+    //更新通话状态的显示
     public void updateCallStatus(String status) {
         runOnUiThread(() -> {
             if (callStatusText != null) {
@@ -294,7 +322,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         });
     }
-
+    //更新文字
     public void updateAiMessage(String message) {
         runOnUiThread(() -> {
             if (aiMessageText != null) {
@@ -302,7 +330,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         });
     }
-
+    //更新人文字
     public void updateRecognizedText(String text) {
         runOnUiThread(() -> {
             if (recognizedText != null) {
@@ -310,7 +338,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         });
     }
-
+    //更新人声音波形
     private void updateUserWaveform(byte[] buffer) {
         if (userWaveformView != null) {
             float[] amplitudes = new float[buffer.length / 2];
@@ -321,7 +349,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             runOnUiThread(() -> userWaveformView.setAmplitudes(amplitudes));
         }
     }
-
+    //更新AI声音波形
     public void updateAiWaveform(float[] amplitudes) {
         runOnUiThread(() -> {
             if (aiWaveformView != null) {
@@ -346,13 +374,13 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     public void onError(String error) {
         updateCallStatus("错误: " + error);
     }
-
+    //处理实时语音通信或语音助手应用中的消息，根据消息类型进行相应的处理，如更新识别出的文本或处理文本转语音的消息。
     @Override
     public void onMessage(String message) {
         try {
             JSONObject jsonMessage = new JSONObject(message);
             String type = jsonMessage.getString("type");
-            
+
             switch (type) {
                 case "stt":
                     // 处理语音识别结果
@@ -361,7 +389,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                     // 打断当前音频播放
                     stopCurrentAudio();
                     break;
-                    
+
                 case "tts":
                     handleTTSMessage(jsonMessage);
                     break;
@@ -370,7 +398,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             Log.e("VoiceCall", "处理消息失败", e);
         }
     }
-
+    //停止当前音频播放
     private void stopCurrentAudio() {
         audioExecutor.execute(() -> {
             try {
@@ -386,7 +414,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         });
     }
-
+    //码主要用于处理AI的语音合成状态，并根据不同的状态更新应用界面和用户
     private void handleTTSMessage(JSONObject message) {
         try {
             String state = message.getString("state");
@@ -396,7 +424,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                     stopCurrentAudio();
                     updateCallStatus("AI正在说话...");
                     break;
-                    
+
                 case "sentence_start":
                     // 显示AI说的话
                     String text = message.getString("text");
@@ -404,10 +432,10 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                     String[] parts = extractEmojiAndText(text);
                     String emoji = parts[0];
                     String cleanText = parts[1];
-                    
+
                     // 更新AI文本（不含emoji）
                     updateAiMessage(cleanText);
-                    
+
                     // 显示emoji（如果有）
                     if (!emoji.isEmpty()) {
                         showEmoji(emoji);
@@ -416,13 +444,13 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                     }
                     updateCallStatus("AI正在说话...");
                     break;
-                    
+
                 case "end":
                     // AI说话结束
                     updateCallStatus("正在通话中...");
                     hideEmoji();
                     break;
-                    
+
                 case "error":
                     String error = message.optString("error", "未知错误");
                     updateCallStatus("TTS错误: " + error);
@@ -433,32 +461,32 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             Log.e("VoiceCall", "处理TTS消息失败", e);
         }
     }
-
+    //要将文本中的表情符号和纯文本分开处理的场景，例如在聊天应用中统计消息中的表情符号数量，或者在文本分析中忽略表情符号的影响。
     private String[] extractEmojiAndText(String text) {
         StringBuilder emoji = new StringBuilder();
         StringBuilder cleanText = new StringBuilder();
-        
+
         int length = text.length();
         for (int i = 0; i < length; ) {
             int codePoint = text.codePointAt(i);
             int charCount = Character.charCount(codePoint);
-            
+
             // 检查是否是emoji（Unicode范围）
             if ((codePoint >= 0x1F300 && codePoint <= 0x1F9FF) ||  // Emoji
-                (codePoint >= 0x2600 && codePoint <= 0x26FF) ||    // Misc Symbols
-                (codePoint >= 0x2700 && codePoint <= 0x27BF) ||    // Dingbats
-                (codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||    // Variation Selectors
-                (codePoint >= 0x1F900 && codePoint <= 0x1F9FF)) {  // Supplemental Symbols and Pictographs
+                    (codePoint >= 0x2600 && codePoint <= 0x26FF) ||    // Misc Symbols
+                    (codePoint >= 0x2700 && codePoint <= 0x27BF) ||    // Dingbats
+                    (codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||    // Variation Selectors
+                    (codePoint >= 0x1F900 && codePoint <= 0x1F9FF)) {  // Supplemental Symbols and Pictographs
                 emoji.append(new String(Character.toChars(codePoint)));
             } else {
                 cleanText.append(new String(Character.toChars(codePoint)));
             }
             i += charCount;
         }
-        
+
         return new String[]{emoji.toString(), cleanText.toString().trim()};
     }
-
+    //Android应用中动态显示一个表情符号。例如，当用户在聊天应用中选择一个表情符号时，可以使用这个方法将选中的表情符号显示在界面上。
     private void showEmoji(String emoji) {
         runOnUiThread(() -> {
             if (emojiText != null) {
@@ -467,7 +495,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         });
     }
-
+    //在Android应用中隐藏一个表情符号。例如，当用户发送一条消息后，可以隐藏之前显示的表情符号。
     private void hideEmoji() {
         runOnUiThread(() -> {
             if (emojiText != null) {
@@ -475,11 +503,11 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         });
     }
-
+    //这段代码主要用于实时音频流的解码和播放，适用于语音通话、在线音乐播放等场景
     @Override
     public void onBinaryMessage(byte[] data) {
         if (data == null || data.length == 0) return;
-        
+
         audioExecutor.execute(() -> {
             try {
                 if (audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
@@ -501,7 +529,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                         pcmData[i * 2 + 1] = (byte) ((sample >> 8) & 0xff);
                     }
                     audioTrack.write(pcmData, 0, pcmData.length, AudioTrack.WRITE_BLOCKING);
-                    
+
                     // 更新AI波形图
                     float[] amplitudes = new float[decodedSamples];
                     for (int i = 0; i < decodedSamples; i++) {
@@ -514,7 +542,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         });
     }
-
+    //释放资源
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -540,4 +568,38 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         executorService.shutdown();
         audioExecutor.shutdown();
     }
-} 
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (videoView != null && videoView.isPlaying()) {
+            videoView.pause();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        if (videoView != null && !videoView.isPlaying()) {
+            videoView.start();
+        }
+    }
+
+    @Override
+    protected void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        if (videoView != null) {
+            outState.putInt("VIDEO_POSITION", videoView.getCurrentPosition());
+        }
+    }
+
+    @Override
+    protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
+        super.onRestoreInstanceState(savedInstanceState);
+        if (videoView != null) {
+            videoView.seekTo(savedInstanceState.getInt("VIDEO_POSITION", 0));
+        }
+    }
+
+
+}

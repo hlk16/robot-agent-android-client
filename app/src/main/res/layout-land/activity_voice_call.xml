@@ -4,12 +4,12 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/black"
-    android:fitsSystemWindows="false">
+    android:fitsSystemWindows="true">
 
     <!-- 视频播放层 -->
     <VideoView
         android:id="@+id/videoBackground"
-        android:layout_width="match_parent"
+        android:layout_width="wrap_content"
         android:layout_height="match_parent"
         android:visibility="visible"
         app:layout_constraintBottom_toBottomOf="parent"
@@ -23,7 +23,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:textColor="#80FFFFFF"
+        android:textColor="#00FFFFFF"
         android:textSize="14sp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -35,7 +35,7 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:textSize="200sp"
-        android:textColor="@color/white"
+        android:textColor="#00FFFFFF"
         android:visibility="gone"
         app:layout_constraintBottom_toTopOf="@id/userInputContainer"
         app:layout_constraintEnd_toEndOf="parent"
@@ -64,7 +64,7 @@
             android:layout_height="wrap_content"
             android:layout_marginStart="12dp"
             android:layout_marginEnd="12dp"
-            android:textColor="@color/white"
+            android:textColor="#00FFFFFF"
             android:textSize="16sp"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintStart_toEndOf="@id/aiAvatar"
@@ -75,6 +75,7 @@
             android:layout_width="0dp"
             android:layout_height="48dp"
             android:layout_marginTop="8dp"
+            android:alpha="0.0"
             app:layout_constraintEnd_toEndOf="@id/aiMessageText"
             app:layout_constraintStart_toStartOf="@id/aiMessageText"
             app:layout_constraintTop_toBottomOf="@id/aiMessageText" />
@@ -86,15 +87,16 @@
         android:id="@+id/userInputContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="40dp"
+        android:layout_marginBottom="32dp"
         android:padding="16dp"
-        app:layout_constraintBottom_toTopOf="@id/controlsContainer">
+        app:layout_constraintBottom_toBottomOf="@+id/videoBackground">
 
         <ImageView
             android:id="@+id/userAvatar"
             android:layout_width="40dp"
             android:layout_height="40dp"
             android:src="@drawable/ic_user_avatar"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintStart_toStartOf="parent"
             app:layout_constraintTop_toTopOf="parent" />
 
@@ -102,18 +104,19 @@
             android:id="@+id/userWaveformView"
             android:layout_width="0dp"
             android:layout_height="48dp"
-            android:layout_marginStart="12dp"
-            android:layout_marginEnd="12dp"
+            android:layout_marginStart="32dp"
+            android:alpha="0.3"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintStart_toEndOf="@id/userAvatar"
-            app:layout_constraintTop_toTopOf="parent" />
+            app:layout_constraintHorizontal_bias="0.0"
+            app:layout_constraintStart_toStartOf="parent" />
 
         <TextView
             android:id="@+id/recognizedText"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:textColor="@color/white"
+            android:textColor="#21FFFFFF"
             android:textSize="14sp"
             app:layout_constraintEnd_toEndOf="@id/userWaveformView"
             app:layout_constraintStart_toStartOf="@id/userWaveformView"
@@ -126,7 +129,6 @@
         android:id="@+id/controlsContainer"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="32dp"
         android:gravity="center"
         android:orientation="horizontal"
         android:padding="16dp"
@@ -167,7 +169,7 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="16dp"
         android:text="可以轻触屏幕或者说话打断回答"
-        android:textColor="#80FFFFFF"
+        android:textColor="#00FFFFFF"
         android:textSize="14sp"
         app:layout_constraintBottom_toTopOf="@id/controlsContainer"
         app:layout_constraintEnd_toEndOf="parent"

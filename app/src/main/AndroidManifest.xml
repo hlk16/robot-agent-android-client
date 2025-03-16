@@ -32,9 +32,10 @@
         <activity
             android:name="com.lhht.xiaozhi.activities.VoiceCallActivity"
             android:theme="@style/Theme.XiaoZhi.VoiceCall"
-            android:screenOrientation="portrait"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize"
             android:exported="false" />
 
     </application>
 
-</manifest> 
+</manifest>
