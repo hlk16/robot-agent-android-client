@@ -25,6 +25,8 @@ import android.widget.Toast;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 
 import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.settings.SettingsManager;
@@ -39,7 +41,43 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity implements WebSocketManager.WebSocketListener {
+    
+    private ActivityResultLauncher<String[]> requestPermissionLauncher;
+    
+    private boolean hasPermissions() {
+        for (String permission : REQUIRED_PERMISSIONS) {
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    private void requestPermissions() {
+        requestPermissionLauncher = registerForActivityResult(
+                new ActivityResultContracts.RequestMultiplePermissions(),
+                permissions -> {
+                    boolean allGranted = true;
+                    for (Boolean isGranted : permissions.values()) {
+                        if (!isGranted) {
+                            allGranted = false;
+                            break;
+                        }
+                    }
+                    
+                    if (!allGranted) {
+                        Toast.makeText(this, "部分权限被拒绝，某些功能可能无法使用", Toast.LENGTH_LONG).show();
+                    }
+                });
+        
+        requestPermissionLauncher.launch(REQUIRED_PERMISSIONS);
+    }
     private static final int PERMISSION_REQUEST_CODE = 1;
+    private static final String[] REQUIRED_PERMISSIONS = new String[]{
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.ACCESS_FINE_LOCATION
+    };
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
@@ -190,6 +228,11 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        
+        // 检查并请求所需权限
+        if (!hasPermissions()) {
+            requestPermissions();
+        }
         Log.i("MainActivity", "应用启动");
         setContentView(R.layout.activity_main);
 
@@ -301,7 +344,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     }
 
     private void startVoiceCall() {
-        Intent intent = new Intent(this, VoiceCallActivity.class);
+        Intent intent = new Intent(this, BluetoothActivity.class);
         startActivity(intent);
     }
 
@@ -579,4 +622,4 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         executorService.shutdown();
         audioExecutor.shutdown();
     }
-} 
+}
