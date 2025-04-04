@@ -207,7 +207,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
 
         // 初始化
         settingsManager = new SettingsManager(this);
-        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+//        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+        String deviceId = 	"c0:3e:ba:2e:d5:97";
         Log.i("MainActivity", "设备ID: " + deviceId);
         webSocketManager = new WebSocketManager(deviceId);
         webSocketManager.setListener(this);

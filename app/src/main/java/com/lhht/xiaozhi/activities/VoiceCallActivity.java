@@ -120,7 +120,8 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     //WebSocket连接的Java方法。它通常用于Android应用程序中，用于建立与服务器的WebSocket通信
     private void initWebSocket() {
         // 从MainActivity获取WebSocket配置
-        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+//        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+        String deviceId = 	"c0:3e:ba:2e:d5:97";
         SettingsManager settingsManager = new SettingsManager(this);
         String wsUrl = settingsManager.getWsUrl();
         String token = settingsManager.getToken();
