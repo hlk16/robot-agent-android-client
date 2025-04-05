@@ -18,4 +18,6 @@
     <string name="start_call">开始通话</string>
     <string name="end_call">结束通话</string>
     <string name="calling">通话中...</string>
+    <!-- TODO: Remove or change this placeholder text -->
+    <string name="hello_blank_fragment">更多功能</string>
 </resources> 

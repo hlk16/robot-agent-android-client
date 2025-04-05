@@ -1,6 +1,7 @@
 package com.lhht.xiaozhi.activities;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
@@ -27,7 +28,10 @@ import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
+import androidx.drawerlayout.widget.DrawerLayout;
+import androidx.fragment.app.Fragment;
 
+import com.google.android.material.navigation.NavigationView;
 import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
@@ -127,6 +131,10 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     private long lastMessageTime = 0;
     private String pendingText = null;
     private volatile String pendingAudioText = null;
+    private DrawerLayout drawerLayout;
+    private NavigationView navigationView;
+    private ImageButton menuButton;
+
 
     // 添加一个消息队列类来处理消息顺序
     private static class TTSMessage {
@@ -225,6 +233,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     // 创建消息处理器实例
     private final MessageHandler messageHandler = new MessageHandler();
 
+    @SuppressLint("MissingInflatedId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -245,6 +254,11 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         ImageButton settingsButton = findViewById(R.id.settingsButton);
         emojiText = findViewById(R.id.emojiText);
         messageText = findViewById(R.id.messageText);
+//        drawerLayout = findViewById(R.id.draw);
+//        navigationView = findViewById(R.id.draw_menu);
+        menuButton= findViewById(R.id.more);
+
+
         
         Log.i("MainActivity", "应用启动");
 
@@ -264,7 +278,11 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         if (recordButton != null) recordButton.setOnClickListener(v -> startVoiceCall());
         if (sendButton != null) sendButton.setOnClickListener(v -> sendMessage());
         if (settingsButton != null) settingsButton.setOnClickListener(v -> openSettings());
-
+        menuButton.setOnClickListener(view -> {
+            Intent intent = new Intent(MainActivity.this, menu.class);
+            startActivity(intent);
+        });
+        
         // 检查并请求权限
         checkPermissions();
 

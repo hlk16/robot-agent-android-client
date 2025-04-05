@@ -9,7 +9,7 @@
     <!-- 视频播放层 -->
     <VideoView
         android:id="@+id/videoBackground"
-        android:layout_width="wrap_content"
+        android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="visible"
         app:layout_constraintBottom_toBottomOf="parent"
