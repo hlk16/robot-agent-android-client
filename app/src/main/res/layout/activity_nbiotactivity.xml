@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<GridLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:columnCount="2"
+    android:rowCount="3"
+    android:padding="16dp"
+    tools:context=".activities.NBIOTActivity">
+
+    <TextView
+        android:id="@+id/lightLabel"
+        android:layout_columnWeight="1"
+        android:layout_rowWeight="1"
+        android:text="灯光"
+        android:textSize="18sp"
+        android:gravity="center"/>
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/lightSwitch"
+        android:layout_columnWeight="1"
+        android:layout_rowWeight="1"
+        android:gravity="center"/>
+
+    <TextView
+        android:id="@+id/acLabel"
+        android:layout_columnWeight="1"
+        android:layout_rowWeight="1"
+        android:text="空调"
+        android:textSize="18sp"
+        android:gravity="center"/>
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/acSwitch"
+        android:layout_columnWeight="1"
+        android:layout_rowWeight="1"
+        android:gravity="center"/>
+
+    <TextView
+        android:id="@+id/doorLabel"
+        android:layout_columnWeight="1"
+        android:layout_rowWeight="1"
+        android:text="门锁"
+        android:textSize="18sp"
+        android:gravity="center"/>
+
+    <androidx.appcompat.widget.SwitchCompat
+        android:id="@+id/doorSwitch"
+        android:layout_columnWeight="1"
+        android:layout_rowWeight="1"
+        android:gravity="center"/>
+
+</GridLayout>

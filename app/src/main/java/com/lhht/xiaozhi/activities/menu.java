@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.widget.Button;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.appcompat.app.AppCompatActivity;
@@ -35,8 +36,23 @@ public class menu extends AppCompatActivity {
         more= findViewById(R.id.morePluge);
         mtableRobot.setOnClickListener(view -> {
             //跳转到桌面机器人界面
+            if (!MainActivity.webSocketManager.isConnected()) {
+                Toast.makeText(this, "请先连接", Toast.LENGTH_SHORT).show();
+                return;
+            }
             Intent intent = new Intent(menu.this, BluetoothActivity.class);
             startActivity(intent);
-        });}
+        });
+        mnbIot.setOnClickListener(view -> {
+            //跳转到物联网界面
+            Intent intent = new Intent(menu.this, NBIOTActivity.class);
+            startActivity(intent);
+        });
+        more.setOnClickListener(view -> {
+            Toast.makeText(this, "敬请期待", Toast.LENGTH_SHORT).show();
+        });
+
+    }
+
 
 }

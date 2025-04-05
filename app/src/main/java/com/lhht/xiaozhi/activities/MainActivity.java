@@ -91,7 +91,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     private static final int MAX_QUEUE_SIZE = 5; // 最大消息队列长度
     private static final int MESSAGE_TIMEOUT = 500; // 消息处理超时时间（毫秒）
 
-    private WebSocketManager webSocketManager;
+    public static WebSocketManager webSocketManager;
     private SettingsManager settingsManager;
     private TextView connectionStatus;
     private Button connectButton;
