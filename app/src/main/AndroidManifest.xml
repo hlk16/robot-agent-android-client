@@ -20,6 +20,7 @@
         android:usesCleartextTraffic="true">
         <activity
             android:name=".activities.Voice"
+
             android:exported="false" />
         <activity
             android:name=".activities.menu"
@@ -48,6 +49,7 @@
             android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.XiaoZhi.VoiceCall" />
+
     </application>
 
 </manifest>

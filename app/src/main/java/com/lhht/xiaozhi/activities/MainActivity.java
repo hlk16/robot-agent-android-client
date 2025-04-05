@@ -362,7 +362,11 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     }
 
     private void startVoiceCall() {
-        Intent intent = new Intent(this, BluetoothActivity.class);
+        if (!webSocketManager.isConnected()) {
+            Toast.makeText(this, "请先连接", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Intent intent = new Intent(MainActivity.this, Voice.class);
         startActivity(intent);
     }
 
