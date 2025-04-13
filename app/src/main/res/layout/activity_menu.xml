@@ -27,10 +27,22 @@
 
     <Button
         android:id="@+id/nbIot"
-        android:gravity="center"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="智能家具" />
+        android:gravity="center"
+        android:text="智能家居" />
+
+    <Button
+        android:id="@+id/drone"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="无人机控制" />
+
+    <Button
+        android:id="@+id/manus"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="安卓manus" />
 
     <Button
         android:id="@+id/morePluge"
