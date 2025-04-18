@@ -32,11 +32,14 @@ import java.util.concurrent.Executors;
 
 public class Voice extends AppCompatActivity implements WebSocketManager.WebSocketListener {
     private VideoView videoView;
+    //音频录制参数
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
     private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
+    //音频播放的缓冲区大小
     private static final int PLAY_BUFFER_SIZE = 65536;
+    //Opus编码器的帧大小
     private static final int OPUS_FRAME_SIZE = 960;
 
     private TextView aiMessageText;
@@ -55,7 +58,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private boolean isRecording = false;
     private boolean isPlaying = false;
 
+    //用于录制音频
     private AudioRecord audioRecord;
+    //用于播放音频
     private AudioTrack audioTrack;
     private ExecutorService executorService;
     private ExecutorService audioExecutor;
@@ -328,6 +333,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             if (recognizedText != null) {
                 recognizedText.setText(text);
             }
+            
+            // 新增语音指令检测
+            if (text != null && text.contains("你看到了什么")) {
+                Toast.makeText(Voice.this, "正在打开摄像头分析", Toast.LENGTH_LONG).show();
+            }
         });
     }
     //更新人声音波形
@@ -388,6 +398,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         } catch (Exception e) {
             Log.e("VoiceCall", "处理消息失败", e);
+            
         }
     }
     //停止当前音频播放
