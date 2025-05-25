@@ -1,5 +1,5 @@
 package com.lhht.xiaozhi.activities;
-
+//这是机器人
 import android.annotation.SuppressLint;
 import android.content.pm.ActivityInfo;
 import android.media.AudioAttributes;

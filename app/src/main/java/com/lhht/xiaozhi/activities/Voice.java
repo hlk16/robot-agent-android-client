@@ -1,4 +1,5 @@
 package com.lhht.xiaozhi.activities;
+//这是波奇酱
 import android.annotation.SuppressLint;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
@@ -30,7 +31,16 @@ import org.json.JSONObject;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import android.hardware.Camera;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
+import android.Manifest;
+import android.content.pm.PackageManager;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
+
 public class Voice extends AppCompatActivity implements WebSocketManager.WebSocketListener {
+    private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
     private VideoView videoView;
     //音频录制参数
     private static final int SAMPLE_RATE = 16000;
@@ -52,6 +62,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private ImageButton muteButton;
     private ImageButton hangupButton;
     private ImageButton speakerButton;
+    private ImageButton previewButton;
+    private SurfaceView frontCameraPreview;
+    private Camera camera;
+    private boolean isPreviewStarted = false;
 
     private boolean isMuted = false;
     private boolean isSpeakerOn = false;
@@ -112,6 +126,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         muteButton = findViewById(R.id.muteButton);
         hangupButton = findViewById(R.id.hangupButton);
         speakerButton = findViewById(R.id.speakerButton);
+        previewButton = findViewById(R.id.previewButton);
+        frontCameraPreview = findViewById(R.id.frontCameraPreview);
+        frontCameraPreview.setVisibility(View.GONE);
     }
     //WebSocket连接的Java方法。它通常用于Android应用程序中，用于建立与服务器的WebSocket通信
     private void initWebSocket() {
@@ -179,11 +196,102 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         muteButton.setOnClickListener(v -> toggleMute());
         hangupButton.setOnClickListener(v -> endCall());
         speakerButton.setOnClickListener(v -> toggleSpeaker());
+        previewButton.setOnClickListener(v -> toggleCameraPreview());
 
         // 点击屏幕打断AI回答
         View rootView = findViewById(android.R.id.content);
         rootView.setOnClickListener(v -> interruptAiResponse());
     }
+
+    private void toggleCameraPreview() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
+            return;
+        }
+
+        if (!isPreviewStarted) {
+            startCameraPreview();
+        } else {
+            stopCameraPreview();
+        }
+        isPreviewStarted = !isPreviewStarted;
+        frontCameraPreview.setVisibility(isPreviewStarted ? View.VISIBLE : View.GONE);
+        previewButton.setImageResource(isPreviewStarted ? R.drawable.baseline_videocam_24 : R.drawable.baseline_videocam_24);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == CAMERA_PERMISSION_REQUEST_CODE) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                toggleCameraPreview();
+            } else {
+                Toast.makeText(this, "需要相机权限才能使用此功能", Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
+    private void startCameraPreview() {
+        try {
+            camera = Camera.open(Camera.CameraInfo.CAMERA_FACING_FRONT);
+            camera.setDisplayOrientation(90);
+            
+            SurfaceHolder holder = frontCameraPreview.getHolder();
+            holder.addCallback(new SurfaceHolder.Callback() {
+                @Override
+                public void surfaceCreated(SurfaceHolder holder) {
+                    try {
+                        camera.setPreviewDisplay(holder);
+                        camera.startPreview();
+                    } catch (Exception e) {
+                        Log.e("CameraPreview", "Error starting camera preview: " + e.getMessage());
+                    }
+                }
+
+                @Override
+                public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
+                    if (holder.getSurface() == null) return;
+                    
+                    try {
+                        camera.stopPreview();
+                        camera.setPreviewDisplay(holder);
+                        camera.startPreview();
+                    } catch (Exception e) {
+                        Log.e("CameraPreview", "Error restarting camera preview: " + e.getMessage());
+                    }
+                }
+
+                @Override
+                public void surfaceDestroyed(SurfaceHolder holder) {
+                    // Surface will be destroyed when replaced with a new surface
+                }
+            });
+        } catch (Exception e) {
+            Log.e("CameraPreview", "Error setting up camera: " + e.getMessage());
+            Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void stopCameraPreview() {
+        if (camera != null) {
+            camera.stopPreview();
+            camera.release();
+            camera = null;
+        }
+    }
+
+//    @Override
+//    protected void onPause() {
+//        super.onPause();
+//        stopCameraPreview();
+//        isPreviewStarted = false;
+//        if (frontCameraPreview != null) {
+//            frontCameraPreview.setVisibility(View.GONE);
+//        }
+//        if (previewButton != null) {
+//            previewButton.setImageResource(R.drawable.baseline_videocam_24);
+//        }
+//    }
 
     private void startCall() {
         if (!webSocketManager.isConnected()) {
@@ -588,6 +696,14 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         super.onPause();
         if (videoView != null && videoView.isPlaying()) {
             videoView.pause();
+        }
+        stopCameraPreview();
+        isPreviewStarted = false;
+        if (frontCameraPreview != null) {
+            frontCameraPreview.setVisibility(View.GONE);
+        }
+        if (previewButton != null) {
+            previewButton.setImageResource(R.drawable.baseline_videocam_24);
         }
     }
 

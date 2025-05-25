@@ -78,4 +78,5 @@ dependencies {
     // JSON
     implementation("org.json:json:20231013")
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.0")
+    implementation (files("libs/SparkChain.aar"))
 }
