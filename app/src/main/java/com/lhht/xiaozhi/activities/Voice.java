@@ -21,7 +21,11 @@ import android.widget.VideoView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
+
+import com.iflytek.sparkchain.core.SparkChain;
+import com.iflytek.sparkchain.core.SparkChainConfig;
 import com.lhht.xiaozhi.R;
+import com.lhht.xiaozhi.api.ImageRecognitionManager;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
 import com.lhht.xiaozhi.websocket.WebSocketManager;
@@ -85,14 +89,14 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private long decoderHandle;
     private short[] decodedBuffer;
     private short[] recordBuffer;
+    private boolean isAuth = false;
+    private ImageRecognitionManager imageRecognitionManager;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
         // 设置沉浸式状态栏和导航栏
-        //要全屏显示的应用场景，例如视频播放、游戏或者图片查看器。通过设置这些标志，
-        // 开发者可以确保应用的内容能够最大化地利用屏幕空间，同时保持布局的稳定性和一致性
         getWindow().getDecorView().setSystemUiVisibility(
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE |
                         View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN |
@@ -100,11 +104,16 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         );
 
         setContentView(R.layout.activity_voice);
+        
+        // 初始化图像识别管理器
 
+        
+        initSDK();
         initViews();
         initWebSocket();
         initAudio();
         setupListeners();
+        initImageRecognition();
 
         // 初始化视频播放
         Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.boqijiang);
@@ -442,12 +451,13 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 recognizedText.setText(text);
             }
             
-            // 新增语音指令检测
-            if (text != null && text.contains("你看到了什么")) {
-                Toast.makeText(Voice.this, "正在打开摄像头分析", Toast.LENGTH_LONG).show();
+            // 检测语音指令并处理图像识别
+            if (text != null && text.contains("看到了什么") && camera != null && isPreviewStarted) {
+                captureFrame();
             }
         });
     }
+
     //更新人声音波形
     private void updateUserWaveform(byte[] buffer) {
         if (userWaveformView != null) {
@@ -459,6 +469,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             runOnUiThread(() -> userWaveformView.setAmplitudes(amplitudes));
         }
     }
+
     //更新AI声音波形
     public void updateAiWaveform(float[] amplitudes) {
         runOnUiThread(() -> {
@@ -484,7 +495,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     public void onError(String error) {
         updateCallStatus("错误: " + error);
     }
-    //处理实时语音通信或语音助手应用中的消息，根据消息类型进行相应的处理，如更新识别出的文本或处理文本转语音的消息。
+
     @Override
     public void onMessage(String message) {
         try {
@@ -506,10 +517,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         } catch (Exception e) {
             Log.e("VoiceCall", "处理消息失败", e);
-            
         }
     }
-    //停止当前音频播放
+
     private void stopCurrentAudio() {
         audioExecutor.execute(() -> {
             try {
@@ -525,29 +535,24 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         });
     }
-    //码主要用于处理AI的语音合成状态，并根据不同的状态更新应用界面和用户
+
     private void handleTTSMessage(JSONObject message) {
         try {
             String state = message.getString("state");
             switch (state) {
                 case "start":
-                    // AI开始说话，确保之前的音频已停止
                     stopCurrentAudio();
                     updateCallStatus("AI正在说话...");
                     break;
 
                 case "sentence_start":
-                    // 显示AI说的话
                     String text = message.getString("text");
-                    // 分离emoji和文本
                     String[] parts = extractEmojiAndText(text);
                     String emoji = parts[0];
                     String cleanText = parts[1];
 
-                    // 更新AI文本（不含emoji）
                     updateAiMessage(cleanText);
 
-                    // 显示emoji（如果有）
                     if (!emoji.isEmpty()) {
                         showEmoji(emoji);
                     } else {
@@ -557,7 +562,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     break;
 
                 case "end":
-                    // AI说话结束
                     updateCallStatus("正在通话中...");
                     hideEmoji();
                     break;
@@ -572,7 +576,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             Log.e("VoiceCall", "处理TTS消息失败", e);
         }
     }
-    //要将文本中的表情符号和纯文本分开处理的场景，例如在聊天应用中统计消息中的表情符号数量，或者在文本分析中忽略表情符号的影响。
+
     private String[] extractEmojiAndText(String text) {
         StringBuilder emoji = new StringBuilder();
         StringBuilder cleanText = new StringBuilder();
@@ -582,12 +586,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             int codePoint = text.codePointAt(i);
             int charCount = Character.charCount(codePoint);
 
-            // 检查是否是emoji（Unicode范围）
-            if ((codePoint >= 0x1F300 && codePoint <= 0x1F9FF) ||  // Emoji
-                    (codePoint >= 0x2600 && codePoint <= 0x26FF) ||    // Misc Symbols
-                    (codePoint >= 0x2700 && codePoint <= 0x27BF) ||    // Dingbats
-                    (codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||    // Variation Selectors
-                    (codePoint >= 0x1F900 && codePoint <= 0x1F9FF)) {  // Supplemental Symbols and Pictographs
+            if ((codePoint >= 0x1F300 && codePoint <= 0x1F9FF) ||
+                    (codePoint >= 0x2600 && codePoint <= 0x26FF) ||
+                    (codePoint >= 0x2700 && codePoint <= 0x27BF) ||
+                    (codePoint >= 0xFE00 && codePoint <= 0xFE0F) ||
+                    (codePoint >= 0x1F900 && codePoint <= 0x1F9FF)) {
                 emoji.append(new String(Character.toChars(codePoint)));
             } else {
                 cleanText.append(new String(Character.toChars(codePoint)));
@@ -597,7 +600,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
         return new String[]{emoji.toString(), cleanText.toString().trim()};
     }
-    //Android应用中动态显示一个表情符号。例如，当用户在聊天应用中选择一个表情符号时，可以使用这个方法将选中的表情符号显示在界面上。
+
     private void showEmoji(String emoji) {
         runOnUiThread(() -> {
             if (emojiText != null) {
@@ -606,7 +609,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         });
     }
-    //在Android应用中隐藏一个表情符号。例如，当用户发送一条消息后，可以隐藏之前显示的表情符号。
+
     private void hideEmoji() {
         runOnUiThread(() -> {
             if (emojiText != null) {
@@ -614,7 +617,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         });
     }
-    //这段代码主要用于实时音频流的解码和播放，适用于语音通话、在线音乐播放等场景
+
     @Override
     public void onBinaryMessage(byte[] data) {
         if (data == null || data.length == 0) return;
@@ -636,7 +639,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     }
                 }
 
-                // 解码并播放音频数据
                 Log.d("AudioDebug", "收到音频数据长度: " + data.length + " bytes");
                 int decodedSamples = opusUtils.decode(decoderHandle, data, decodedBuffer);
                 Log.d("AudioDebug", "解码后PCM样本数: " + decodedSamples);
@@ -652,7 +654,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     Log.d("AudioDebug", "写入AudioTrack字节数: " + bytesWritten);
                     Log.d("AudioDebug", "AudioTrack状态: " + audioTrack.getPlayState() + ", 采样率: " + audioTrack.getSampleRate());
 
-                    // 更新AI波形图
                     float[] amplitudes = new float[decodedSamples];
                     for (int i = 0; i < decodedSamples; i++) {
                         amplitudes[i] = decodedBuffer[i] / 32768f;
@@ -664,7 +665,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         });
     }
-    //释放资源
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
@@ -687,6 +688,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             opusUtils.destroyDecoder(decoderHandle);
             decoderHandle = 0;
         }
+        if (imageRecognitionManager != null) {
+            imageRecognitionManager.release();
+            imageRecognitionManager = null;
+        }
         executorService.shutdown();
         audioExecutor.shutdown();
     }
@@ -698,6 +703,13 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             videoView.pause();
         }
         stopCameraPreview();
+        isPreviewStarted = false;
+        if (frontCameraPreview != null) {
+            frontCameraPreview.setVisibility(View.GONE);
+        }
+        if (previewButton != null) {
+            previewButton.setImageResource(R.drawable.baseline_videocam_24);
+        }
         isPreviewStarted = false;
         if (frontCameraPreview != null) {
             frontCameraPreview.setVisibility(View.GONE);
@@ -731,5 +743,52 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }
     }
 
+    private void initSDK() {
+        Log.d("SDK", "正在初始化SDK...");
+        // 初始化SDK，使用链式调用简化代码
+        SparkChainConfig sparkChainConfig = SparkChainConfig.builder()
+                .appID(getResources().getString(R.string.appid))
+                .apiKey(getResources().getString(R.string.apikey))
+                .apiSecret(getResources().getString(R.string.apiSecret))
+                .logLevel(666);
 
+        int ret = SparkChain.getInst().init(getApplicationContext(), sparkChainConfig);
+        isAuth = (ret == 0);
+        Log.d("SDK", isAuth ? "SDK初始化成功" : "SDK初始化失败,错误码: " + ret);
+        if (isAuth) {
+            Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show();
+        }
+    }
+    private void initImageRecognition() {
+        imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
+            @Override
+            public void onRecognitionResult(String content) {
+                runOnUiThread(() -> {
+
+                    Toast.makeText(Voice.this, content, Toast.LENGTH_SHORT).show();
+                    Log.d("ImageRecognition", "识别结果: " + content);
+                });
+            }
+
+            @Override
+            public void onRecognitionError(String errorMessage) {
+                runOnUiThread(() -> {
+                    Toast.makeText(Voice.this, "识别失败: " + errorMessage, Toast.LENGTH_SHORT).show();
+                    Log.e("ImageRecognition", "识别失败: " + errorMessage);
+                });
+            }
+        });
+    }
+    private void captureFrame() {
+        if (camera == null) return;
+
+        camera.setPreviewCallback(new Camera.PreviewCallback() {
+            @Override
+            public void onPreviewFrame(byte[] data, Camera camera) {
+                imageRecognitionManager.processPreviewFrame(data, camera);
+                Toast.makeText(Voice.this, "正在识别图像...", Toast.LENGTH_SHORT).show();
+                camera.setPreviewCallback(null);
+            }
+        });
+    }
 }
