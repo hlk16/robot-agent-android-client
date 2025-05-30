@@ -32,6 +32,8 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.fragment.app.Fragment;
 
 import com.google.android.material.navigation.NavigationView;
+import com.iflytek.sparkchain.core.SparkChain;
+import com.iflytek.sparkchain.core.SparkChainConfig;
 import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
@@ -135,7 +137,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     private NavigationView navigationView;
     private ImageButton menuButton;
 
-
+    private boolean isAuth = false;
     // 添加一个消息队列类来处理消息顺序
     private static class TTSMessage {
         final String text;
@@ -237,7 +239,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        
+        initSDK();
         // 检查并请求所需权限
         if (!hasPermissions()) {
             requestPermissions();
@@ -643,5 +645,22 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         }
         executorService.shutdown();
         audioExecutor.shutdown();
+    }
+
+    private void initSDK() {
+        Log.d("SDK", "正在初始化SDK...");
+        // 初始化SDK，使用链式调用简化代码
+        SparkChainConfig sparkChainConfig = SparkChainConfig.builder()
+                .appID(getResources().getString(R.string.appid))
+                .apiKey(getResources().getString(R.string.apikey))
+                .apiSecret(getResources().getString(R.string.apiSecret))
+                .logLevel(666);
+
+        int ret = SparkChain.getInst().init(getApplicationContext(), sparkChainConfig);
+        isAuth = (ret == 0);
+        Log.d("SDK", isAuth ? "SDK初始化成功" : "SDK初始化失败,错误码: " + ret);
+        if (isAuth) {
+            Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show();
+        }
     }
 }

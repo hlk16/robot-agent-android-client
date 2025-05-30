@@ -108,7 +108,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         // 初始化图像识别管理器
 
         
-        initSDK();
+//        initSDK();
         initViews();
         initWebSocket();
         initAudio();
