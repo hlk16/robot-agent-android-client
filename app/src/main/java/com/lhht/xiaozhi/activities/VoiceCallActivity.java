@@ -27,6 +27,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.iflytek.sparkchain.core.SparkChain;
 import com.iflytek.sparkchain.core.SparkChainConfig;
 import com.lhht.xiaozhi.R;
+import com.lhht.xiaozhi.activities.BtThread.ConnectedThread;
 import com.lhht.xiaozhi.api.ImageRecognitionManager;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
@@ -93,7 +94,8 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private short[] recordBuffer;
     private boolean isAuth = false;
     private ImageRecognitionManager imageRecognitionManager;
-
+    private ConnectedThread connectedThread;
+    public static char order='x';
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -482,6 +484,29 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             // 检测语音指令并处理图像识别
             if (text != null && text.contains("看到了什么") && camera != null && isPreviewStarted) {
                 captureFrame();
+            }
+            else if(text != null && text.contains("向前走") ) {
+                order='a';
+                Toast.makeText(this, "发送前进", Toast.LENGTH_SHORT).show();
+
+            }
+            else if(text != null && text.contains("向后走") ) {
+                order='b';
+                Toast.makeText(this, "发送后退", Toast.LENGTH_SHORT).show();
+
+            }
+            else if(text != null && text.contains("向左转") ) {
+                order='c';
+                Toast.makeText(this, "发送左转", Toast.LENGTH_SHORT).show();
+
+            }
+            else if(text != null && text.contains("向右转") ) {
+                order='d';
+                Toast.makeText(this, "发送右转", Toast.LENGTH_SHORT).show();
+            }
+            else if(text != null && text.contains("停下来") ) {
+                order='e';
+                Toast.makeText(this, "发送停止", Toast.LENGTH_SHORT).show();
             }
         });
     }

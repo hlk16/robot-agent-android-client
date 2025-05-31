@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothSocket;
 import android.util.Log;
 
 
+import com.lhht.xiaozhi.activities.VoiceCallActivity;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -49,14 +50,26 @@ public class ConnectedThread extends Thread{
             //5.停止-e
             //以上通过语音控制
 
-//            if (MainActivity.getCenterx>=700){
-//                btWriteString("d");
-//            }
-//            else if (MainActivity.getCenterx<=300) {
-//                btWriteString("c");
-//            }else{
-//
-//            }
+            if (VoiceCallActivity.order == 'a') {
+                btWriteString("a");
+                VoiceCallActivity.order = 'x';
+            }
+            else if (VoiceCallActivity.order == 'b') {
+                btWriteString("b");
+                VoiceCallActivity.order = 'x';
+            }else if (VoiceCallActivity.order == 'c') {
+                btWriteString("c");
+                VoiceCallActivity.order = 'x';
+            }
+            else if (VoiceCallActivity.order == 'd') {
+                btWriteString("d");
+                VoiceCallActivity.order = 'x';
+            }
+            else if (VoiceCallActivity.order == 'e') {
+                btWriteString("e");
+                VoiceCallActivity.order = 'x';
+            }
+
 
         }
     }

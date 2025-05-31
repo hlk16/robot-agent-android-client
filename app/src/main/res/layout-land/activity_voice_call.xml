@@ -125,7 +125,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:textColor="#21FFFFFF"
+            android:textColor="#FFFFFF"
             android:textSize="14sp"
             app:layout_constraintEnd_toEndOf="@id/userWaveformView"
             app:layout_constraintStart_toStartOf="@id/userWaveformView"

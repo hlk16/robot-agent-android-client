@@ -25,6 +25,7 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.iflytek.sparkchain.core.SparkChain;
 import com.iflytek.sparkchain.core.SparkChainConfig;
 import com.lhht.xiaozhi.R;
+import com.lhht.xiaozhi.activities.BtThread.ConnectedThread;
 import com.lhht.xiaozhi.api.ImageRecognitionManager;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
@@ -455,6 +456,8 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             if (text != null && text.contains("看到了什么") && camera != null && isPreviewStarted) {
                 captureFrame();
             }
+
+
         });
     }
 
@@ -764,11 +767,27 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             @Override
             public void onRecognitionResult(String content) {
                 runOnUiThread(() -> {
-
+                    if (webSocketManager != null && webSocketManager.isConnected()) {
+                        try {
+                            JSONObject jsonMessage = new JSONObject();
+//                            jsonMessage.put("type", "user_intent");
+//                            jsonMessage.put("content", content);
+//                            jsonMessage.put("source", "image_recognition");
+//                            jsonMessage.put("expect_voice_response", true);
+                            jsonMessage.put("type", "listen");
+                            jsonMessage.put("state", "detect");
+                            jsonMessage.put("text", content);
+                            jsonMessage.put("source", "text");
+                            webSocketManager.sendMessage(jsonMessage.toString()+"你需要返回你识别的内容");
+                        } catch (Exception e) {
+                            Log.e("VoiceCall", "发送识别消息失败", e);
+                        }
+                    }
                     Toast.makeText(Voice.this, content, Toast.LENGTH_SHORT).show();
                     Log.d("ImageRecognition", "识别结果: " + content);
                 });
             }
+
 
             @Override
             public void onRecognitionError(String errorMessage) {
@@ -779,6 +798,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         });
     }
+    
     private void captureFrame() {
         if (camera == null) return;
 
