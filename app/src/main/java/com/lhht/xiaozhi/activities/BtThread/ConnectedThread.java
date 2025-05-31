@@ -69,6 +69,13 @@ public class ConnectedThread extends Thread{
                 btWriteString("e");
                 VoiceCallActivity.order = 'x';
             }
+            else if (VoiceCallActivity.order == 'f') {
+                btWriteString("f");
+                VoiceCallActivity.order = 'x';
+            }else if (VoiceCallActivity.order == 'g') {
+                btWriteString("g");
+                VoiceCallActivity.order = 'x';
+            }
 
 
         }

@@ -508,6 +508,14 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 order='e';
                 Toast.makeText(this, "发送停止", Toast.LENGTH_SHORT).show();
             }
+             else if(text != null && text.contains("左手伸出来") ) {
+                order='f';
+                Toast.makeText(this, "伸左手", Toast.LENGTH_SHORT).show();
+            }else if(text != null && text.contains("右手伸出来") ) {
+                order='g';
+                Toast.makeText(this, "伸右手", Toast.LENGTH_SHORT).show();
+            }
+
         });
     }
 
