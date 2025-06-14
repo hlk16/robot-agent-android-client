@@ -21,6 +21,9 @@ import java.util.Set;
 public class SettingsActivity extends AppCompatActivity {
     private SettingsManager settingsManager;
     private TextInputEditText tokenInput;
+    private TextInputEditText appIdInput;
+    private TextInputEditText apiKeyInput;
+    private TextInputEditText apiSecretInput;
     private SwitchMaterial enableTokenSwitch;
     private RecyclerView wsUrlList;
     private MaterialButton addWsUrlButton;
@@ -40,6 +43,9 @@ public class SettingsActivity extends AppCompatActivity {
         settingsManager = new SettingsManager(this);
         
         tokenInput = findViewById(R.id.tokenInput);
+        appIdInput = findViewById(R.id.getAppId);
+        apiKeyInput = findViewById(R.id.getApiKey);
+        apiSecretInput = findViewById(R.id.getApiSecret);
         enableTokenSwitch = findViewById(R.id.enableTokenSwitch);
         ExtendedFloatingActionButton saveButton = findViewById(R.id.saveButton);
         wsUrlList = findViewById(R.id.wsUrlList);
@@ -47,6 +53,9 @@ public class SettingsActivity extends AppCompatActivity {
 
         // 加载当前设置
         tokenInput.setText(settingsManager.getToken());
+        appIdInput.setText(settingsManager.getAppId());
+        apiKeyInput.setText(settingsManager.getApiKey());
+        apiSecretInput.setText(settingsManager.getApiSecret());
         enableTokenSwitch.setChecked(settingsManager.isTokenEnabled());
 
         // 加载WebSocket地址列表
@@ -67,6 +76,9 @@ public class SettingsActivity extends AppCompatActivity {
         // 保存设置
         saveButton.setOnClickListener(v -> {
             String token = tokenInput.getText().toString();
+            String appId = appIdInput.getText().toString();
+            String apiKey = apiKeyInput.getText().toString();
+            String apiSecret = apiSecretInput.getText().toString();
             boolean enableToken = enableTokenSwitch.isChecked();
 
             // 获取当前所有WebSocket地址
@@ -77,6 +89,7 @@ public class SettingsActivity extends AppCompatActivity {
             if (!selectedWsUrl.isEmpty()) {
                 settingsManager.saveSettings(selectedWsUrl, token, enableToken);
             }
+            settingsManager.saveApiSettings(appId, apiKey, apiSecret);
             settingsManager.saveWsUrls(new HashSet<>(currentUrls));
             finish();
         });
@@ -100,4 +113,4 @@ public class SettingsActivity extends AppCompatActivity {
     private void updateTokenInputState() {
         tokenInput.setEnabled(enableTokenSwitch.isChecked());
     }
-} 
+}

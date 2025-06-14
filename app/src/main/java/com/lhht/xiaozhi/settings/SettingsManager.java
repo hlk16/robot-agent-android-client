@@ -10,6 +10,9 @@ public class SettingsManager {
     private static final String KEY_TOKEN = "token";
     private static final String KEY_ENABLE_TOKEN = "enable_token";
     private static final String KEY_WS_URLS = "ws_urls";
+    private static final String KEY_APP_ID = "app_id";
+    private static final String KEY_API_KEY = "api_key";
+    private static final String KEY_API_SECRET = "api_secret";
     
     private final SharedPreferences preferences;
     
@@ -30,6 +33,14 @@ public class SettingsManager {
                 .putStringSet(KEY_WS_URLS, urls)
                 .apply();
     }
+
+    public void saveApiSettings(String appId, String apiKey, String apiSecret) {
+        preferences.edit()
+                .putString(KEY_APP_ID, appId)
+                .putString(KEY_API_KEY, apiKey)
+                .putString(KEY_API_SECRET, apiSecret)
+                .apply();
+    }
     
     public String getWsUrl() {
         return preferences.getString(KEY_WS_URL, "ws://localhost:9005");
@@ -46,4 +57,16 @@ public class SettingsManager {
     public Set<String> getWsUrls() {
         return preferences.getStringSet(KEY_WS_URLS, null);
     }
-} 
+
+    public String getAppId() {
+        return preferences.getString(KEY_APP_ID, "");
+    }
+
+    public String getApiKey() {
+        return preferences.getString(KEY_API_KEY, "");
+    }
+
+    public String getApiSecret() {
+        return preferences.getString(KEY_API_SECRET, "");
+    }
+}

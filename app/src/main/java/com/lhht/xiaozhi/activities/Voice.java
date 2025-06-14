@@ -47,7 +47,7 @@ import androidx.core.content.ContextCompat;
 public class Voice extends AppCompatActivity implements WebSocketManager.WebSocketListener {
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
     private VideoView videoView;
-    //音频录制参数
+    //音频录制参数Vertex16000
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
@@ -228,7 +228,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         frontCameraPreview.setVisibility(isPreviewStarted ? View.VISIBLE : View.GONE);
         previewButton.setImageResource(isPreviewStarted ? R.drawable.baseline_videocam_24 : R.drawable.baseline_videocam_24);
     }
-
+    //相机权限请求回调方法
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -240,7 +240,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         }
     }
-
+    //相机启动摄像头预览
     private void startCameraPreview() {
         try {
             camera = Camera.open(Camera.CameraInfo.CAMERA_FACING_FRONT);
@@ -281,7 +281,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
         }
     }
-
+    //停止摄像头预览
     private void stopCameraPreview() {
         if (camera != null) {
             camera.stopPreview();
@@ -762,6 +762,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show();
         }
     }
+    //相机数据返回后端服务器
     private void initImageRecognition() {
         imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
             @Override
@@ -798,7 +799,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         });
     }
-    
+    //相机识别
     private void captureFrame() {
         if (camera == null) return;
 

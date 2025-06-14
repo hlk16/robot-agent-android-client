@@ -649,11 +649,25 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
 
     private void initSDK() {
         Log.d("SDK", "正在初始化SDK...");
-        // 初始化SDK，使用链式调用简化代码
+        
+        // 从设置管理器获取用户输入的API配置
+        SettingsManager settingsManager = new SettingsManager(this);
+        String appId = settingsManager.getAppId();
+        String apiKey = settingsManager.getApiKey();
+        String apiSecret = settingsManager.getApiSecret();
+        
+        // 检查API配置是否完整
+        if (appId.isEmpty() || apiKey.isEmpty() || apiSecret.isEmpty()) {
+            Log.w("SDK", "API配置不完整，请在设置中配置appID、apiKey和apiSecret");
+            Toast.makeText(this, "请先在设置中配置API信息", Toast.LENGTH_LONG).show();
+            return;
+        }
+        
+        // 初始化SDK，使用用户配置的API数据
         SparkChainConfig sparkChainConfig = SparkChainConfig.builder()
-                .appID(getResources().getString(R.string.appid))
-                .apiKey(getResources().getString(R.string.apikey))
-                .apiSecret(getResources().getString(R.string.apiSecret))
+                .appID(appId)
+                .apiKey(apiKey)
+                .apiSecret(apiSecret)
                 .logLevel(666);
 
         int ret = SparkChain.getInst().init(getApplicationContext(), sparkChainConfig);
@@ -661,6 +675,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         Log.d("SDK", isAuth ? "SDK初始化成功" : "SDK初始化失败,错误码: " + ret);
         if (isAuth) {
             Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "SDK初始化失败，请检查API配置", Toast.LENGTH_LONG).show();
         }
     }
 }
