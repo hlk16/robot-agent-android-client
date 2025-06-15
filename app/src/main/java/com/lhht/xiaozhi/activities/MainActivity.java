@@ -32,6 +32,8 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.fragment.app.Fragment;
 
 import com.google.android.material.navigation.NavigationView;
+import androidx.appcompat.app.AlertDialog;
+import android.content.SharedPreferences;
 import com.iflytek.sparkchain.core.SparkChain;
 import com.iflytek.sparkchain.core.SparkChainConfig;
 import com.lhht.xiaozhi.R;
@@ -234,6 +236,35 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
 
     // 创建消息处理器实例
     private final MessageHandler messageHandler = new MessageHandler();
+    
+    private void showFirstTimeDialog() {
+        SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
+        boolean isFirstTime = prefs.getBoolean("is_first_time", true);
+        
+        if (isFirstTime) {
+            new AlertDialog.Builder(this)
+                .setTitle("欢迎使用小智助手")
+                .setMessage("欢迎使用小智智能助手！\n\n使用前请注意：\n1. 首次使用需要在设置中配置API信息\n2. 自己部署小智后端可以享受完整功能\n3. 连接虾哥服务器只能文字对话(bug)\n4.该项目作者b站电子裁缝-叫我康康，大学生作品bug多，更新慢。请谅解后续会慢慢更新\n◉5.该软件目前免费，如果付费可能被骗，可以点点举报\n\n点击确定开始使用！")
+                .setPositiveButton("确定", (dialog, which) -> {
+                    // 标记已显示过首次提示
+                    SharedPreferences.Editor editor = prefs.edit();
+                    editor.putBoolean("is_first_time", false);
+                    editor.apply();
+                    dialog.dismiss();
+                })
+                .setNegativeButton("前往设置", (dialog, which) -> {
+                    // 标记已显示过首次提示
+                    SharedPreferences.Editor editor = prefs.edit();
+                    editor.putBoolean("is_first_time", false);
+                    editor.apply();
+                    // 打开设置页面
+                    openSettings();
+                    dialog.dismiss();
+                })
+                .setCancelable(false)
+                .show();
+        }
+    }
 
     @SuppressLint("MissingInflatedId")
     @Override
@@ -287,6 +318,9 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         
         // 检查并请求权限
         checkPermissions();
+        
+        // 显示首次启动提示
+        showFirstTimeDialog();
 
         // 初始化音频播放器
         int minBufferSize = AudioTrack.getMinBufferSize(
