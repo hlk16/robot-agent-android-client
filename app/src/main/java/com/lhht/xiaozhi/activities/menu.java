@@ -21,6 +21,7 @@ public class menu extends AppCompatActivity {
     private Button more;
     private Button drone;
     private Button manus;
+    private Button navgation;
     @SuppressLint("MissingInflatedId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -38,6 +39,7 @@ public class menu extends AppCompatActivity {
         more= findViewById(R.id.morePluge);
         manus= findViewById(R.id.manus);
         drone=findViewById(R.id.drone);
+        navgation=findViewById(R.id.navigation);
         mtableRobot.setOnClickListener(view -> {
             //跳转到桌面机器人界面
             if (!MainActivity.webSocketManager.isConnected()) {
@@ -62,6 +64,10 @@ public class menu extends AppCompatActivity {
         });
         manus.setOnClickListener(view -> {
             Toast.makeText(this, "敬请期待", Toast.LENGTH_SHORT).show();
+        });
+        navgation.setOnClickListener(view -> {
+            Intent intent = new Intent(menu.this, NavActivity.class);
+            startActivity(intent);
         });
 
 

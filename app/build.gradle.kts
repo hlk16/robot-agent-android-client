@@ -79,4 +79,10 @@ dependencies {
     implementation("org.json:json:20231013")
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.0")
     implementation (files("libs/SparkChain.aar"))
+    // 地图库
+    implementation ("com.tencent.map:tencent-map-vector-sdk:4.5.5.1-lite")
+    // 导航库
+    implementation ("com.tencent.map:tencent-map-nav-sdk:5.3.8.3")
+    // 导航依赖库
+    implementation ("com.tencent.map:tencent-map-nav-surport:1.1.0.1")
 }

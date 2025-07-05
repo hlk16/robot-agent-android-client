@@ -43,7 +43,12 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="安卓manus" />
-
+    <Button
+        android:id="@+id/navigation"
+        android:gravity="center"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="导航" />
     <Button
         android:id="@+id/morePluge"
         android:gravity="center"
