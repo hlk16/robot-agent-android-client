@@ -19,8 +19,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" /> <!-- 需要外部存储写权限用于日志 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" /> <!-- 添加相机权限 -->
-    <uses-permission android:name="android.permission.CAMERA" />
-    <!-- 高采样率传感器权限，导航SDK需要 -->
+    <uses-permission android:name="android.permission.CAMERA" /> <!-- 高采样率传感器权限，导航SDK需要 -->
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
 
     <uses-feature android:name="android.hardware.camera" />
@@ -34,6 +33,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.XiaoZhi"
         android:usesCleartextTraffic="true">
+        <activity
+            android:name=".activities.ChatActivity"
+            android:exported="false" />
         <activity
             android:name=".activities.WalkNaviActivity"
             android:exported="false" />

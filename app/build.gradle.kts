@@ -85,4 +85,5 @@ dependencies {
     implementation ("com.tencent.map:tencent-map-nav-sdk:5.3.8.3")
     // 导航依赖库
     implementation ("com.tencent.map:tencent-map-nav-surport:1.1.0.1")
+    implementation ("com.squareup.okhttp3:okhttp:4.12.0")
 }
