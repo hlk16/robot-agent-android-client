@@ -1,6 +1,7 @@
 package com.lhht.xiaozhi.activities;
 //这是波奇酱
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
@@ -514,6 +515,11 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }else if(text != null && text.contains("右手伸出来") ) {
                 order='g';
                 Toast.makeText(this, "伸右手", Toast.LENGTH_SHORT).show();
+            } else if (text != null && text.contains("帮我取快递") && camera != null && isPreviewStarted)  {
+                Toast.makeText(VoiceCallActivity.this, "正在打开导航", Toast.LENGTH_SHORT).show();
+                Intent intent = new Intent(VoiceCallActivity.this, WalkNaviActivity.class);
+                startActivity(intent);
+
             }
 
         });
