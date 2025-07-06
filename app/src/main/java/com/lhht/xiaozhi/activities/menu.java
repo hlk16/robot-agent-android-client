@@ -66,7 +66,7 @@ public class menu extends AppCompatActivity {
             Toast.makeText(this, "敬请期待", Toast.LENGTH_SHORT).show();
         });
         navgation.setOnClickListener(view -> {
-            Intent intent = new Intent(menu.this, NavActivity.class);
+            Intent intent = new Intent(menu.this, WalkNaviActivity.class);
             startActivity(intent);
         });
 

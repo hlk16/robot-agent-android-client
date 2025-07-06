@@ -35,7 +35,7 @@
         android:theme="@style/Theme.XiaoZhi"
         android:usesCleartextTraffic="true">
         <activity
-            android:name=".activities.NavActivity"
+            android:name=".activities.WalkNaviActivity"
             android:exported="false" />
 
         <meta-data

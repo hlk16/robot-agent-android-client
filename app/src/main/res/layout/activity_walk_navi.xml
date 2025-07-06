@@ -5,7 +5,90 @@
     android:id="@+id/main"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".activities.NavActivity">
+    tools:context=".activities.WalkNaviActivity">
+
+    <!-- 导航信息显示区域 -->
+    <LinearLayout
+        android:id="@+id/navigation_info_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:background="#E3F2FD"
+        android:elevation="6dp"
+        android:visibility="gone"
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- 转向图标 -->
+        <TextView
+            android:id="@+id/iv_turn_icon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_vertical"
+            android:layout_marginEnd="8dp"
+            android:text="直行"
+            android:textSize="12sp"
+            android:textColor="#333333"
+            android:background="#E8F4FD"
+            android:padding="4dp"
+            android:minWidth="32dp"
+            android:gravity="center" />
+
+        <!-- 导航文字信息 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/tv_next_road"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="前方路口右转"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="#1976D2" />
+
+            <TextView
+                android:id="@+id/tv_current_road"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="当前道路：中关村大街"
+                android:textSize="12sp"
+                android:textColor="#666666" />
+
+        </LinearLayout>
+
+        <!-- 距离和时间信息 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:gravity="end">
+
+            <TextView
+                android:id="@+id/tv_distance_to_next"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="200m"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:textColor="#1976D2" />
+
+            <TextView
+                android:id="@+id/tv_total_remaining"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="剩余 2.5km 8分钟"
+                android:textSize="10sp"
+                android:textColor="#666666" />
+
+        </LinearLayout>
+
+    </LinearLayout>
 
     <!-- 路线设置面板 -->
     <LinearLayout
@@ -13,12 +96,10 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="20dp"
-        android:layout_margin="8dp"
-        android:background="@drawable/bg_voice_container"
-        android:backgroundTint="@color/white"
-        android:elevation="6dp"
-        app:layout_constraintTop_toTopOf="parent"
+        android:padding="16dp"
+        android:background="#F5F5F5"
+        android:elevation="4dp"
+        app:layout_constraintTop_toBottomOf="@id/navigation_info_panel"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintEnd_toEndOf="parent">
 
@@ -53,11 +134,21 @@
                 android:layout_weight="1"
                 android:hint="请输入起点地址"
                 android:textSize="14sp"
-                android:textColor="@color/text_color"
-                android:textColorHint="@color/hint_color"
+                android:textColor="@color/black"
                 android:padding="12dp"
-                android:background="@drawable/rounded_corner"
+                android:background="@drawable/bg_message"
                 android:singleLine="true" />
+
+            <Button
+                android:id="@+id/btn_use_current_location"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginStart="8dp"
+                android:text="从当前位置导航"
+                android:textSize="10sp"
+                android:textColor="#FFFFFF"
+                android:background="@drawable/rounded_corner"
+                android:minWidth="80dp" />
 
         </LinearLayout>
 
@@ -83,10 +174,9 @@
                 android:layout_weight="1"
                 android:hint="请输入终点地址"
                 android:textSize="14sp"
-                android:textColor="@color/text_color"
-                android:textColorHint="@color/hint_color"
+                android:textColor="@color/black"
                 android:padding="12dp"
-                android:background="@drawable/rounded_corner"
+                android:background="@drawable/bg_message"
                 android:singleLine="true" />
 
         </LinearLayout>
@@ -116,10 +206,8 @@
                 android:layout_width="wrap_content"
                 android:layout_height="48dp"
                 android:layout_marginStart="8dp"
-                android:paddingStart="16dp"
-                android:paddingEnd="16dp"
                 android:text="收起"
-                android:textColor="@color/text_gray"
+                android:textColor="@color/black"
                 android:textSize="14sp"
                 android:background="@drawable/bg_nav_button_secondary"
                 android:elevation="1dp" />
