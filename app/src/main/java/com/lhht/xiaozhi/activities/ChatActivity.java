@@ -36,6 +36,7 @@ public class ChatActivity extends AppCompatActivity {
     private EditText etUserId, etNickname, etTargetUser, etMessage;
     private TextView tvStatus, tvOnlineUsers, tvMessages;
     private Button btnConnect, btnSend, btnGetUsers, btnPing, btnClear;
+    private Button btnForward, btnBackward, btnLeft, btnRight, btnStop;
 
     private WebSocket webSocket;
     private OkHttpClient client;
@@ -74,6 +75,13 @@ public class ChatActivity extends AppCompatActivity {
         btnGetUsers = findViewById(R.id.btnGetUsers);
         btnPing = findViewById(R.id.btnPing);
         btnClear = findViewById(R.id.btnClear);
+        
+        // 快捷控制按钮
+        btnForward = findViewById(R.id.btnForward);
+        btnBackward = findViewById(R.id.btnBackward);
+        btnLeft = findViewById(R.id.btnLeft);
+        btnRight = findViewById(R.id.btnRight);
+        btnStop = findViewById(R.id.btnStop);
     }
 
     private void initWebSocket() {
@@ -97,6 +105,13 @@ public class ChatActivity extends AppCompatActivity {
         btnGetUsers.setOnClickListener(v -> getOnlineUsers());
         btnPing.setOnClickListener(v -> sendPing());
         btnClear.setOnClickListener(v -> clearMessages());
+        
+        // 快捷控制按钮点击事件
+        btnForward.setOnClickListener(v -> sendQuickCommand("前进"));
+        btnBackward.setOnClickListener(v -> sendQuickCommand("后退"));
+        btnLeft.setOnClickListener(v -> sendQuickCommand("左转"));
+        btnRight.setOnClickListener(v -> sendQuickCommand("右转"));
+        btnStop.setOnClickListener(v -> sendQuickCommand("停止"));
     }
 
     private void connect() {
@@ -272,24 +287,64 @@ public class ChatActivity extends AppCompatActivity {
         String targetUser = etTargetUser.getText().toString().trim();
         String content = etMessage.getText().toString().trim();
 
-        if (TextUtils.isEmpty(targetUser) || TextUtils.isEmpty(content)) {
-            Toast.makeText(this, "请输入目标用户和消息内容", Toast.LENGTH_SHORT).show();
+        if (TextUtils.isEmpty(content)) {
+            Toast.makeText(this, "请输入消息内容", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (!isConnected || webSocket == null) {
+            Toast.makeText(this, "请先连接服务器", Toast.LENGTH_SHORT).show();
             return;
         }
 
         try {
             JSONObject message = new JSONObject();
             message.put("type", "chat");
-            message.put("target_user_id", targetUser);
             message.put("content", content);
-
-            if (webSocket != null) {
-                webSocket.send(message.toString());
-                etMessage.setText("");
-                addMessage("我", "发送给 " + targetUser + ": " + content, getCurrentTime());
+            if (!TextUtils.isEmpty(targetUser)) {
+                message.put("target_user_id", targetUser);
             }
+
+            webSocket.send(message.toString());
+            etMessage.setText("");
+            addMessage("我", content, getCurrentTime());
         } catch (JSONException e) {
-            Toast.makeText(this, "消息格式错误", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "发送消息失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    /**
+     * 发送快捷控制指令
+     * @param command 控制指令（前进、后退、左转、右转、停止）
+     */
+    private void sendQuickCommand(String command) {
+        if (!isConnected || webSocket == null) {
+            Toast.makeText(this, "请先连接服务器", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            String targetUser = etTargetUser.getText().toString().trim();
+            
+            JSONObject message = new JSONObject();
+            message.put("type", "chat");
+            message.put("content", "[控制指令] " + command);
+            
+            // 添加控制指令标识
+            message.put("command", command);
+            message.put("is_control", true);
+            
+            // 与文本消息使用相同的发送逻辑
+            if (!TextUtils.isEmpty(targetUser)) {
+                message.put("target_user_id", targetUser);
+                addMessage("我[控制]", "发送给 " + targetUser + ": " + command, getCurrentTime());
+            } else {
+                addMessage("我[控制]", command, getCurrentTime());
+            }
+
+            webSocket.send(message.toString());
+        } catch (JSONException e) {
+            Toast.makeText(this, "发送控制指令失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
