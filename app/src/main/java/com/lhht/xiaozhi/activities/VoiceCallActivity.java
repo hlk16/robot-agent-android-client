@@ -122,7 +122,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         initImageRecognition();
 
         // 初始化视频播放
-        Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.reacktion);
+        Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.new_action);
         videoView.setVideoURI(videoUri);
         videoView.setOnPreparedListener(mp -> {
             mp.setLooping(true);
