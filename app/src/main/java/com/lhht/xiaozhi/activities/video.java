@@ -441,6 +441,11 @@ public class video extends AppCompatActivity implements SignalingClient.Signalin
         }
 
         @Override
+        public void onRemoteStreamReady() {
+
+        }
+
+        @Override
         public void onIceGatheringComplete() {
             runOnUiThread(() -> {
                 Log.d(TAG, "ICE候选者收集完成");

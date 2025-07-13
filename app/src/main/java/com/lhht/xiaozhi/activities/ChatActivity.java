@@ -1,10 +1,12 @@
 package com.lhht.xiaozhi.activities;
 
+import android.Manifest;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
-import android.view.SurfaceView;
+import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -13,17 +15,25 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
 import com.lhht.xiaozhi.R;
+import com.lhht.xiaozhi.activities.webrtc.SignalingClient;
+import com.lhht.xiaozhi.activities.webrtc.WebRTCManager;
 
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.webrtc.IceCandidate;
+import org.webrtc.SessionDescription;
+import org.webrtc.SurfaceViewRenderer;
 
+import java.net.URI;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import okhttp3.OkHttpClient;
@@ -33,23 +43,35 @@ import okhttp3.WebSocket;
 import okhttp3.WebSocketListener;
 import okio.ByteString;
 
-public class ChatActivity extends AppCompatActivity {
+public class ChatActivity extends AppCompatActivity implements SignalingClient.SignalingListener {
 
+    private static final String TAG = "ChatActivity";
+    private static final int PERMISSION_REQUEST_CODE = 1001;
+    
     private EditText etUserId, etNickname, etTargetUser, etMessage, etRoomId;
     private TextView tvStatus, tvOnlineUsers, tvMessages;
     private Button btnConnect, btnSend, btnGetUsers, btnPing, btnClear;
     private Button btnForward, btnBackward, btnLeft, btnRight, btnStop;
     private Button btnJoinRoom, btnCameraToggle, btnCall;
-    private SurfaceView surfaceViewRemote, surfaceViewLocal;
+    private SurfaceViewRenderer surfaceViewRemote, surfaceViewLocal;
     private LinearLayout layoutNoRemoteSignal, layoutNoLocalSignal;
 
     private WebSocket webSocket;
     private OkHttpClient client;
     private Handler mainHandler;
     private boolean isConnected = false;
+    
+    // WebRTC相关变量
+    private SignalingClient signalingClient;
+    private WebRTCManager webRTCManager;
+    private String clientId;
+    private String remoteClientId;
+    private boolean isWebRTCConnected = false;
+    private boolean isInCall = false;
 
     // 真机测试配置 - 根据您的网络信息配置
     private static final String SERVER_URL = "ws://192.168.0.102:8000/ws/chat/"; // 真机测试地址
+    private static final String WEBRTC_SERVER_URL = "ws://192.168.0.102:8000/ws/webrtc/"; // WebRTC专用端点
     // 模拟器测试请使用: "ws://10.0.2.2:8000/ws/chat/"
     // 当前配置基于您的IPv4地址: 192.168.0.102
 
@@ -61,8 +83,13 @@ public class ChatActivity extends AppCompatActivity {
         initViews();
         initWebSocket();
         setupClickListeners();
+        checkPermissions();
 
         mainHandler = new Handler(Looper.getMainLooper());
+        
+        // 生成唯一的客户端ID
+        clientId = "client_" + UUID.randomUUID().toString().substring(0, 8);
+        Log.d(TAG, "客户端ID: " + clientId);
     }
 
     private void initViews() {
@@ -94,7 +121,7 @@ public class ChatActivity extends AppCompatActivity {
         btnCameraToggle = findViewById(R.id.btnCameraToggle);
         btnCall = findViewById(R.id.callbutton);
         
-        // 视频预览控件
+        // 视频预览控件 - 转换为SurfaceViewRenderer
         surfaceViewRemote = findViewById(R.id.surfaceViewRemote);
         surfaceViewLocal = findViewById(R.id.surfaceViewLocal);
         layoutNoRemoteSignal = findViewById(R.id.layoutNoRemoteSignal);
@@ -129,6 +156,21 @@ public class ChatActivity extends AppCompatActivity {
         btnLeft.setOnClickListener(v -> sendQuickCommand("左转"));
         btnRight.setOnClickListener(v -> sendQuickCommand("右转"));
         btnStop.setOnClickListener(v -> sendQuickCommand("停止"));
+        
+        // WebRTC相关按钮点击事件
+        btnJoinRoom.setOnClickListener(v -> {
+            if (!isWebRTCConnected) {
+                connectToWebRTCServer();
+            } else {
+                disconnectFromWebRTCServer();
+            }
+        });
+        
+        btnCall.setOnClickListener(v -> {
+            if (!isInCall) {
+                startCall();
+            }
+        });
     }
 
     private void connect() {
@@ -415,12 +457,405 @@ public class ChatActivity extends AppCompatActivity {
         return sdf.format(new Date());
     }
 
+    // WebRTC相关方法开始
+    private void checkPermissions() {
+        String[] permissions = {
+                Manifest.permission.CAMERA,
+                Manifest.permission.RECORD_AUDIO,
+                Manifest.permission.MODIFY_AUDIO_SETTINGS
+        };
+
+        boolean allGranted = true;
+        for (String permission : permissions) {
+            if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
+                allGranted = false;
+                break;
+            }
+        }
+
+        if (!allGranted) {
+            ActivityCompat.requestPermissions(this, permissions, PERMISSION_REQUEST_CODE);
+        } else {
+            initializeWebRTC();
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == PERMISSION_REQUEST_CODE) {
+            boolean allGranted = true;
+            for (int result : grantResults) {
+                if (result != PackageManager.PERMISSION_GRANTED) {
+                    allGranted = false;
+                    break;
+                }
+            }
+
+            if (allGranted) {
+                initializeWebRTC();
+            } else {
+                Toast.makeText(this, "需要摄像头和麦克风权限才能进行视频通话", Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    private void initializeWebRTC() {
+        runOnUiThread(() -> {
+            try {
+                Log.d(TAG, "Initializing WebRTC on UI thread");
+                
+                // 检查视图是否为空
+                if (surfaceViewLocal == null || surfaceViewRemote == null) {
+                    Log.e(TAG, "SurfaceView is null - local: " + (surfaceViewLocal == null) + ", remote: " + (surfaceViewRemote == null));
+                    return;
+                }
+                
+                // 显示无信号提示
+                if (layoutNoLocalSignal != null) {
+                    layoutNoLocalSignal.setVisibility(View.VISIBLE);
+                }
+                if (layoutNoRemoteSignal != null) {
+                    layoutNoRemoteSignal.setVisibility(View.VISIBLE);
+                }
+                
+                webRTCManager = new WebRTCManager(this, webRTCListener);
+                webRTCManager.initializeViews(surfaceViewLocal, surfaceViewRemote);
+                webRTCManager.startLocalVideo();
+                
+                Log.d(TAG, "WebRTC initialized successfully");
+                Toast.makeText(this, "WebRTC 初始化成功", Toast.LENGTH_SHORT).show();
+            } catch (Exception e) {
+                Log.e(TAG, "Error initializing WebRTC: " + e.getMessage(), e);
+                Toast.makeText(this, "WebRTC 初始化失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void connectToWebRTCServer() {
+        try {
+            String roomId = etRoomId.getText().toString().trim();
+            if (roomId.isEmpty()) {
+                roomId = "test_room"; // 默认房间号
+            }
+            
+            // 构建包含客户端ID和nickname的WebRTC端点URL
+            String nickname = etNickname.getText().toString().trim();
+            if (nickname.isEmpty()) {
+                nickname = "Android客户端";
+            }
+            String webrtcUrl = WEBRTC_SERVER_URL + clientId + "?nickname=" + nickname;
+            signalingClient = new SignalingClient(new URI(webrtcUrl), this);
+            signalingClient.connect();
+        } catch (Exception e) {
+            Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "连接WebRTC服务器失败", e);
+        }
+    }
+
+    private void disconnectFromWebRTCServer() {
+        if (signalingClient != null) {
+            signalingClient.close();
+        }
+        isWebRTCConnected = false;
+        updateWebRTCButtonStates();
+    }
+
+    private void updateWebRTCButtonStates() {
+        btnJoinRoom.setText(isWebRTCConnected ? "离开房间" : "加入房间");
+        btnCall.setEnabled(isWebRTCConnected && !isInCall);
+    }
+
+    private void startCall() {
+        if (webRTCManager != null && isWebRTCConnected) {
+            Toast.makeText(this, "开始呼叫", Toast.LENGTH_SHORT).show();
+            webRTCManager.createPeerConnection();
+            // 创建PeerConnection后，添加本地媒体流
+            webRTCManager.addLocalStreamToPeerConnection();
+            webRTCManager.createOffer();
+            isInCall = true;
+            updateWebRTCButtonStates();
+        }
+    }
+
+    private void endCall() {
+        if (webRTCManager != null) {
+            webRTCManager.close();
+            initializeWebRTC();
+        }
+        isInCall = false;
+        updateWebRTCButtonStates();
+    }
+
+    private void handleSignalingMessage(String message) {
+        try {
+            JSONObject jsonMessage = new JSONObject(message);
+            String type = jsonMessage.getString("type");
+            Log.d(TAG, "收到WebRTC消息类型: " + type);
+
+            switch (type) {
+                case "user_joined":
+                    String joinedClientId = jsonMessage.getString("clientId");
+                    if (!joinedClientId.equals(clientId)) {
+                        remoteClientId = joinedClientId;
+                        Toast.makeText(this, "用户 " + joinedClientId + " 加入房间", Toast.LENGTH_SHORT).show();
+                    }
+                    break;
+
+                case "offer":
+                    handleOffer(jsonMessage);
+                    break;
+
+                case "answer":
+                    handleAnswer(jsonMessage);
+                    break;
+
+                case "ice-candidate":
+                    handleIceCandidate(jsonMessage);
+                    break;
+
+                case "user_left":
+                    String leftClientId = jsonMessage.getString("clientId");
+                    Toast.makeText(this, "用户 " + leftClientId + " 离开房间", Toast.LENGTH_SHORT).show();
+                    if (isInCall) {
+                        endCall();
+                    }
+                    break;
+            }
+        } catch (JSONException e) {
+            Log.e(TAG, "处理WebRTC消息失败: " + e.getMessage());
+        }
+    }
+
+    private void handleOffer(JSONObject message) {
+        try {
+            String sdp = message.getString("sdp");
+            String fromClientId = message.getString("senderId");
+
+            // 设置远程客户端ID
+            remoteClientId = fromClientId;
+
+            runOnUiThread(() -> {
+                if (webRTCManager != null) {
+                    webRTCManager.createPeerConnection();
+                    // 关键修复：在设置远程描述之前添加本地媒体流
+                    webRTCManager.addLocalStreamToPeerConnection();
+                    SessionDescription remoteSdp = new SessionDescription(SessionDescription.Type.OFFER, sdp);
+                    webRTCManager.setRemoteDescription(remoteSdp);
+                    webRTCManager.createAnswer();
+                    isInCall = true;
+                    updateWebRTCButtonStates();
+                }
+            });
+        } catch (JSONException e) {
+            Log.e(TAG, "处理offer失败: " + e.getMessage());
+        }
+    }
+
+    private void handleAnswer(JSONObject message) {
+        try {
+            String sdp = message.getString("sdp");
+            String fromClientId = message.getString("senderId");
+
+            // 设置远程客户端ID（如果还没有设置）
+            if (remoteClientId == null) {
+                remoteClientId = fromClientId;
+            }
+
+            runOnUiThread(() -> {
+                if (webRTCManager != null) {
+                    SessionDescription remoteSdp = new SessionDescription(SessionDescription.Type.ANSWER, sdp);
+                    webRTCManager.setRemoteDescription(remoteSdp);
+                }
+            });
+        } catch (JSONException e) {
+            Log.e(TAG, "处理answer失败: " + e.getMessage());
+        }
+    }
+
+    private void handleIceCandidate(JSONObject message) {
+        try {
+            String candidate = message.getString("candidate");
+            String sdpMid = message.getString("sdpMid");
+            int sdpMLineIndex = message.getInt("sdpMLineIndex");
+
+            runOnUiThread(() -> {
+                if (webRTCManager != null) {
+                    IceCandidate iceCandidate = new IceCandidate(sdpMid, sdpMLineIndex, candidate);
+                    webRTCManager.addIceCandidate(iceCandidate);
+                }
+            });
+        } catch (JSONException e) {
+            Log.e(TAG, "处理ICE候选失败: " + e.getMessage());
+        }
+    }
+
+    // SignalingClient.SignalingListener接口实现
+    @Override
+    public void onConnected() {
+        runOnUiThread(() -> {
+            isWebRTCConnected = true;
+            updateWebRTCButtonStates();
+            String roomId = etRoomId.getText().toString().trim();
+            if (roomId.isEmpty()) {
+                roomId = "test_room"; // 默认房间号
+            }
+            signalingClient.sendJoinRoom(roomId, clientId);
+            Toast.makeText(ChatActivity.this, "连接成功，加入房间: " + roomId, Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    @Override
+    public void onDisconnected() {
+        runOnUiThread(() -> {
+            isWebRTCConnected = false;
+            updateWebRTCButtonStates();
+            Toast.makeText(ChatActivity.this, "WebRTC连接断开", Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    @Override
+    public void onMessageReceived(String message) {
+        runOnUiThread(() -> handleSignalingMessage(message));
+    }
+
+    @Override
+    public void onError(Exception ex) {
+        runOnUiThread(() -> {
+            Toast.makeText(ChatActivity.this, "WebRTC错误: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "WebRTC错误", ex);
+        });
+    }
+
+    // WebRTC监听器实现
+    public void onLocalDescription(SessionDescription sdp) {
+        if (signalingClient != null && signalingClient.isOpen() && remoteClientId != null) {
+            if (sdp.type == SessionDescription.Type.OFFER) {
+                signalingClient.sendOffer(sdp.description, remoteClientId);
+            } else if (sdp.type == SessionDescription.Type.ANSWER) {
+                signalingClient.sendAnswer(sdp.description, remoteClientId);
+            }
+        }
+    }
+
+    public void onIceCandidate(IceCandidate candidate) {
+        if (signalingClient != null && signalingClient.isOpen() && remoteClientId != null) {
+            signalingClient.sendIceCandidate(
+                    candidate.sdp,
+                    candidate.sdpMid,
+                    candidate.sdpMLineIndex,
+                    remoteClientId
+            );
+        }
+    }
+
+    // WebRTC连接状态回调（与信令回调分开）
+    public void onWebRTCConnected() {
+        runOnUiThread(() -> {
+            Toast.makeText(this, "视频通话已连接", Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    public void onWebRTCDisconnected() {
+        runOnUiThread(() -> {
+            Toast.makeText(this, "视频通话已断开", Toast.LENGTH_SHORT).show();
+            if (isInCall) {
+                endCall();
+            }
+        });
+    }
+
+    public void onWebRTCError(String error) {
+        runOnUiThread(() -> {
+            Toast.makeText(this, "WebRTC错误: " + error, Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    // WebRTCManager.WebRTCListener接口实现
+    private WebRTCManager.WebRTCListener webRTCListener = new WebRTCManager.WebRTCListener() {
+        @Override
+        public void onLocalDescription(SessionDescription description) {
+            ChatActivity.this.onLocalDescription(description);
+        }
+
+        @Override
+        public void onIceCandidate(IceCandidate candidate) {
+            ChatActivity.this.onIceCandidate(candidate);
+        }
+
+        @Override
+        public void onConnected() {
+            onWebRTCConnected();
+        }
+
+        @Override
+        public void onDisconnected() {
+            onWebRTCDisconnected();
+        }
+
+        @Override
+        public void onError(String error) {
+            onWebRTCError(error);
+        }
+
+        @Override
+        public void onLocalStreamReady() {
+            runOnUiThread(() -> {
+                Log.d(TAG, "本地媒体流创建成功");
+                
+                // 隐藏本地无信号提示，显示本地视频
+                if (layoutNoLocalSignal != null) {
+                    layoutNoLocalSignal.setVisibility(View.GONE);
+                }
+                if (surfaceViewLocal != null) {
+                    surfaceViewLocal.setVisibility(View.VISIBLE);
+                }
+                
+                Toast.makeText(ChatActivity.this, "本地视频已准备就绪", Toast.LENGTH_SHORT).show();
+            });
+        }
+
+        @Override
+        public void onRemoteStreamReady() {
+            runOnUiThread(() -> {
+                Log.d(TAG, "远程媒体流准备就绪");
+                
+                // 隐藏远程无信号提示，显示远程视频
+                if (layoutNoRemoteSignal != null) {
+                    layoutNoRemoteSignal.setVisibility(View.GONE);
+                }
+                if (surfaceViewRemote != null) {
+                    surfaceViewRemote.setVisibility(View.VISIBLE);
+                }
+                
+                Toast.makeText(ChatActivity.this, "远程视频已连接", Toast.LENGTH_SHORT).show();
+            });
+        }
+
+        @Override
+        public void onIceGatheringComplete() {
+            runOnUiThread(() -> {
+                Log.d(TAG, "ICE候选者收集完成");
+                Toast.makeText(ChatActivity.this, "网络连接准备就绪", Toast.LENGTH_SHORT).show();
+            });
+        }
+    };
+    // WebRTC相关方法结束
+
     @Override
     protected void onDestroy() {
         super.onDestroy();
         disconnect();
         if (client != null) {
             client.dispatcher().executorService().shutdown();
+        }
+        
+        // 清理WebRTC资源
+        if (webRTCManager != null) {
+            webRTCManager.close();
+        }
+        if (signalingClient != null) {
+            signalingClient.close();
         }
     }
 }

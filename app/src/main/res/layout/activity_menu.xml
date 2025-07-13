@@ -49,11 +49,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="通讯" />
-    <Button
-        android:id="@+id/video"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="视频通话" />
+<!--    <Button-->
+<!--        android:id="@+id/video"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="wrap_content"-->
+<!--        android:text="视频通话" />-->
     <Button
         android:id="@+id/manus"
         android:layout_width="match_parent"

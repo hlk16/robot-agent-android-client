@@ -44,7 +44,7 @@ public class menu extends AppCompatActivity {
         drone=findViewById(R.id.drone);
         navgation=findViewById(R.id.navigation);
         chat=findViewById(R.id.chat);
-        video=findViewById(R.id.video);
+//        video=findViewById(R.id.video);
         mtableRobot.setOnClickListener(view -> {
             //跳转到桌面机器人界面
             if (!MainActivity.webSocketManager.isConnected()) {
@@ -78,10 +78,10 @@ public class menu extends AppCompatActivity {
             Intent intent = new Intent(menu.this, ChatActivity.class);
             startActivity(intent);
         });
-        video.setOnClickListener(view -> {
-            Intent intent = new Intent(menu.this, video.class);
-            startActivity(intent);
-        });
+//        video.setOnClickListener(view -> {
+//            Intent intent = new Intent(menu.this, video.class);
+//            startActivity(intent);
+//        });
 
     }
 

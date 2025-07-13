@@ -287,7 +287,7 @@
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintDimensionRatio="16:9">
 
-                            <SurfaceView
+                            <org.webrtc.SurfaceViewRenderer
                                 android:id="@+id/surfaceViewLocal"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent" />
@@ -299,7 +299,8 @@
                                 android:layout_height="match_parent"
                                 android:orientation="vertical"
                                 android:gravity="center"
-                                android:background="#1A1A1A">
+                                android:background="#1A1A1A"
+                                android:visibility="gone">
 
                                 <ImageView
                                     android:layout_width="48dp"
@@ -351,7 +352,7 @@
                             app:layout_constraintEnd_toEndOf="parent"
                             app:layout_constraintDimensionRatio="16:9">
 
-                            <SurfaceView
+                            <org.webrtc.SurfaceViewRenderer
                                 android:id="@+id/surfaceViewRemote"
                                 android:layout_width="match_parent"
                                 android:layout_height="match_parent" />
@@ -363,7 +364,8 @@
                                 android:layout_height="match_parent"
                                 android:orientation="vertical"
                                 android:gravity="center"
-                                android:background="#1A1A1A">
+                                android:background="#1A1A1A"
+                                android:visibility="gone">
 
                                 <ImageView
                                     android:layout_width="48dp"

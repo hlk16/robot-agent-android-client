@@ -48,6 +48,8 @@ public class WebRTCManager {
         void onError(String error);
         //当本地媒体流创建成功时，触发此回调。
         void onLocalStreamReady();
+        //当远程媒体流准备就绪时，触发此回调。
+        void onRemoteStreamReady();
         //当ICE候选者收集完成时，触发此回调，特别适用于局域网连接
         void onIceGatheringComplete();
     }
@@ -676,10 +678,18 @@ public class WebRTCManager {
                     ((android.app.Activity) context).runOnUiThread(() -> {
                         remoteVideoTrack.addSink(remoteVideoView);
                         Log.d(TAG, "远程视频轨道已添加到视图");
+                        // 通知远程视频流准备就绪
+                        if (listener != null) {
+                            listener.onRemoteStreamReady();
+                        }
                     });
                 } else {
                     remoteVideoTrack.addSink(remoteVideoView);
                     Log.d(TAG, "远程视频轨道已添加到视图");
+                    // 通知远程视频流准备就绪
+                    if (listener != null) {
+                        listener.onRemoteStreamReady();
+                    }
                 }
             } else {
                 Log.w(TAG, "无远程视频轨道或remoteVideoView为空");
