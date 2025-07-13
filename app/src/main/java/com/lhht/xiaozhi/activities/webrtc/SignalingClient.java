@@ -111,4 +111,17 @@ public class SignalingClient extends WebSocketClient {
             Log.e("SignalingClient", "构建ICE候选消息失败", e);
         }
     }
+    
+    // 发送结束通话消息
+    public void sendEndCall(String targetId) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "end_call");
+            message.put("targetId", targetId);
+            send(message.toString());
+            Log.d("SignalingClient", "发送结束通话消息到: " + targetId);
+        } catch (JSONException e) {
+            Log.e("SignalingClient", "构建结束通话消息失败", e);
+        }
+    }
 }

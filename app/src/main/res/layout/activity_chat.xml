@@ -253,7 +253,7 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="📹 视频通话"
+                    android:text="📹 视频通话(进入房间才可打开摄像头)"
                     android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="#333333"

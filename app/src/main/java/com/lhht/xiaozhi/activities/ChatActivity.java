@@ -52,7 +52,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private TextView tvStatus, tvOnlineUsers, tvMessages;
     private Button btnConnect, btnSend, btnGetUsers, btnPing, btnClear;
     private Button btnForward, btnBackward, btnLeft, btnRight, btnStop;
-    private Button btnJoinRoom, btnCameraToggle, btnCall;
+    private Button btnJoinRoom, btnCameraToggle, btnCall, btnEndCall;
     private SurfaceViewRenderer surfaceViewRemote, surfaceViewLocal;
     private LinearLayout layoutNoRemoteSignal, layoutNoLocalSignal;
 
@@ -68,6 +68,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private String remoteClientId;
     private boolean isWebRTCConnected = false;
     private boolean isInCall = false;
+    private boolean isCameraEnabled = false; // 摄像头状态，默认关闭
 
     // 真机测试配置 - 根据您的网络信息配置
     private static final String SERVER_URL = "ws://192.168.0.102:8000/ws/chat/"; // 真机测试地址
@@ -120,6 +121,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         btnJoinRoom = findViewById(R.id.btnJoinRoom);
         btnCameraToggle = findViewById(R.id.btnCameraToggle);
         btnCall = findViewById(R.id.callbutton);
+        btnEndCall = findViewById(R.id.btnEndCall);
         
         // 视频预览控件 - 转换为SurfaceViewRenderer
         surfaceViewRemote = findViewById(R.id.surfaceViewRemote);
@@ -171,6 +173,16 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 startCall();
             }
         });
+        
+        btnEndCall.setOnClickListener(v -> {
+            if (isInCall) {
+                endCall();
+            }
+        });
+        
+        btnCameraToggle.setOnClickListener(v -> {
+            toggleCamera();
+        });
     }
 
     private void connect() {
@@ -178,7 +190,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         String nickname = etNickname.getText().toString().trim();
 
         if (TextUtils.isEmpty(userId) || TextUtils.isEmpty(nickname)) {
-            Toast.makeText(this, "请输入用户ID和昵称", Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "请输入用户ID和昵称", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -236,7 +248,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             });
         } catch (Exception e) {
             addMessage("系统", "连接异常: " + e.getMessage(), getCurrentTime());
-            Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
+             Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_LONG).show();
         }
     }
 
@@ -347,12 +359,12 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         String content = etMessage.getText().toString().trim();
 
         if (TextUtils.isEmpty(content)) {
-            Toast.makeText(this, "请输入消息内容", Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "请输入消息内容", Toast.LENGTH_SHORT).show();
             return;
         }
 
         if (!isConnected || webSocket == null) {
-            Toast.makeText(this, "请先连接服务器", Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "请先连接服务器", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -368,7 +380,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             etMessage.setText("");
             addMessage("我", content, getCurrentTime());
         } catch (JSONException e) {
-            Toast.makeText(this, "发送消息失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "发送消息失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -378,7 +390,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
      */
     private void sendQuickCommand(String command) {
         if (!isConnected || webSocket == null) {
-            Toast.makeText(this, "请先连接服务器", Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "请先连接服务器", Toast.LENGTH_SHORT).show();
             return;
         }
 
@@ -403,7 +415,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
             webSocket.send(message.toString());
         } catch (JSONException e) {
-            Toast.makeText(this, "发送控制指令失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "发送控制指令失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -416,7 +428,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 webSocket.send(message.toString());
             }
         } catch (JSONException e) {
-            Toast.makeText(this, "请求格式错误", Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "请求格式错误", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -430,7 +442,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 addMessage("心跳", "发送心跳检测", getCurrentTime());
             }
         } catch (JSONException e) {
-            Toast.makeText(this, "心跳格式错误", Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "心跳格式错误", Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -495,7 +507,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             if (allGranted) {
                 initializeWebRTC();
             } else {
-                Toast.makeText(this, "需要摄像头和麦克风权限才能进行视频通话", Toast.LENGTH_LONG).show();
+                 Toast.makeText(this, "需要摄像头和麦克风权限才能进行视频通话", Toast.LENGTH_LONG).show();
             }
         }
     }
@@ -524,10 +536,10 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 webRTCManager.startLocalVideo();
                 
                 Log.d(TAG, "WebRTC initialized successfully");
-                Toast.makeText(this, "WebRTC 初始化成功", Toast.LENGTH_SHORT).show();
+                // Toast.makeText(this, "WebRTC 初始化成功", Toast.LENGTH_SHORT).show();
             } catch (Exception e) {
                 Log.e(TAG, "Error initializing WebRTC: " + e.getMessage(), e);
-                Toast.makeText(this, "WebRTC 初始化失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                 Toast.makeText(this, "WebRTC 初始化失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
             }
         });
     }
@@ -548,7 +560,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             signalingClient = new SignalingClient(new URI(webrtcUrl), this);
             signalingClient.connect();
         } catch (Exception e) {
-            Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
             Log.e(TAG, "连接WebRTC服务器失败", e);
         }
     }
@@ -564,11 +576,43 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private void updateWebRTCButtonStates() {
         btnJoinRoom.setText(isWebRTCConnected ? "离开房间" : "加入房间");
         btnCall.setEnabled(isWebRTCConnected && !isInCall);
+        btnEndCall.setEnabled(isInCall);
+        btnCameraToggle.setEnabled(isWebRTCConnected);
+        
+        // 更新摄像头按钮文本
+        if (isCameraEnabled) {
+            btnCameraToggle.setText("关闭摄像头");
+        } else {
+            btnCameraToggle.setText("开启摄像头");
+        }
+    }
+    
+    private void toggleCamera() {
+        if (webRTCManager == null) {
+             Toast.makeText(this, "WebRTC未初始化", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        if (isCameraEnabled) {
+            // 关闭摄像头
+            webRTCManager.disableCamera();
+            isCameraEnabled = false;
+            layoutNoLocalSignal.setVisibility(View.VISIBLE);
+            // Toast.makeText(this, "摄像头已关闭", Toast.LENGTH_SHORT).show();
+        } else {
+            // 开启摄像头
+            webRTCManager.enableCamera();
+            isCameraEnabled = true;
+            layoutNoLocalSignal.setVisibility(View.GONE);
+            // Toast.makeText(this, "摄像头已开启", Toast.LENGTH_SHORT).show();
+        }
+        
+        updateWebRTCButtonStates();
     }
 
     private void startCall() {
         if (webRTCManager != null && isWebRTCConnected) {
-            Toast.makeText(this, "开始呼叫", Toast.LENGTH_SHORT).show();
+            // Toast.makeText(this, "开始呼叫", Toast.LENGTH_SHORT).show();
             webRTCManager.createPeerConnection();
             // 创建PeerConnection后，添加本地媒体流
             webRTCManager.addLocalStreamToPeerConnection();
@@ -581,10 +625,28 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private void endCall() {
         if (webRTCManager != null) {
             webRTCManager.close();
-            initializeWebRTC();
         }
+        if (signalingClient != null && signalingClient.isOpen()) {
+            signalingClient.sendEndCall(remoteClientId);
+        }
+        
+        // 显示无信号提示
+        if (layoutNoLocalSignal != null) {
+            layoutNoLocalSignal.setVisibility(View.VISIBLE);
+        }
+        if (layoutNoRemoteSignal != null) {
+            layoutNoRemoteSignal.setVisibility(View.VISIBLE);
+        }
+        
+        // 重新初始化WebRTC
+        initializeWebRTC();
+        
         isInCall = false;
+        remoteClientId = null;
+        isCameraEnabled = false; // 重置摄像头状态
         updateWebRTCButtonStates();
+        
+        // Toast.makeText(this, "通话已结束", Toast.LENGTH_SHORT).show();
     }
 
     private void handleSignalingMessage(String message) {
@@ -598,7 +660,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                     String joinedClientId = jsonMessage.getString("clientId");
                     if (!joinedClientId.equals(clientId)) {
                         remoteClientId = joinedClientId;
-                        Toast.makeText(this, "用户 " + joinedClientId + " 加入房间", Toast.LENGTH_SHORT).show();
+                         Toast.makeText(this, "用户 " + joinedClientId + " 加入房间", Toast.LENGTH_SHORT).show();
                     }
                     break;
 
@@ -616,7 +678,15 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
                 case "user_left":
                     String leftClientId = jsonMessage.getString("clientId");
-                    Toast.makeText(this, "用户 " + leftClientId + " 离开房间", Toast.LENGTH_SHORT).show();
+                     Toast.makeText(this, "用户 " + leftClientId + " 离开房间", Toast.LENGTH_SHORT).show();
+                    if (isInCall) {
+                        endCall();
+                    }
+                    break;
+                    
+                case "end_call":
+                    String endCallClientId = jsonMessage.getString("senderId");
+                     Toast.makeText(this, "用户 " + endCallClientId + " 结束了通话", Toast.LENGTH_SHORT).show();
                     if (isInCall) {
                         endCall();
                     }
@@ -701,7 +771,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 roomId = "test_room"; // 默认房间号
             }
             signalingClient.sendJoinRoom(roomId, clientId);
-            Toast.makeText(ChatActivity.this, "连接成功，加入房间: " + roomId, Toast.LENGTH_SHORT).show();
+            // Toast.makeText(ChatActivity.this, "连接成功，加入房间: " + roomId, Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -710,7 +780,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         runOnUiThread(() -> {
             isWebRTCConnected = false;
             updateWebRTCButtonStates();
-            Toast.makeText(ChatActivity.this, "WebRTC连接断开", Toast.LENGTH_SHORT).show();
+            // Toast.makeText(ChatActivity.this, "WebRTC连接断开", Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -722,7 +792,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     @Override
     public void onError(Exception ex) {
         runOnUiThread(() -> {
-            Toast.makeText(ChatActivity.this, "WebRTC错误: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
+             Toast.makeText(ChatActivity.this, "WebRTC错误: " + ex.getMessage(), Toast.LENGTH_SHORT).show();
             Log.e(TAG, "WebRTC错误", ex);
         });
     }
@@ -752,13 +822,13 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     // WebRTC连接状态回调（与信令回调分开）
     public void onWebRTCConnected() {
         runOnUiThread(() -> {
-            Toast.makeText(this, "视频通话已连接", Toast.LENGTH_SHORT).show();
+            // Toast.makeText(this, "视频通话已连接", Toast.LENGTH_SHORT).show();
         });
     }
 
     public void onWebRTCDisconnected() {
         runOnUiThread(() -> {
-            Toast.makeText(this, "视频通话已断开", Toast.LENGTH_SHORT).show();
+            // Toast.makeText(this, "视频通话已断开", Toast.LENGTH_SHORT).show();
             if (isInCall) {
                 endCall();
             }
@@ -767,7 +837,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
     public void onWebRTCError(String error) {
         runOnUiThread(() -> {
-            Toast.makeText(this, "WebRTC错误: " + error, Toast.LENGTH_SHORT).show();
+             Toast.makeText(this, "WebRTC错误: " + error, Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -803,15 +873,24 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             runOnUiThread(() -> {
                 Log.d(TAG, "本地媒体流创建成功");
                 
-                // 隐藏本地无信号提示，显示本地视频
+                // 默认禁用摄像头
+                if (webRTCManager != null) {
+                    webRTCManager.disableCamera();
+                    isCameraEnabled = false;
+                }
+                
+                // 显示本地无信号提示，隐藏本地视频（因为摄像头默认关闭）
                 if (layoutNoLocalSignal != null) {
-                    layoutNoLocalSignal.setVisibility(View.GONE);
+                    layoutNoLocalSignal.setVisibility(View.VISIBLE);
                 }
                 if (surfaceViewLocal != null) {
                     surfaceViewLocal.setVisibility(View.VISIBLE);
                 }
                 
-                Toast.makeText(ChatActivity.this, "本地视频已准备就绪", Toast.LENGTH_SHORT).show();
+                // 更新按钮状态
+                updateWebRTCButtonStates();
+                
+                // Toast.makeText(ChatActivity.this, "本地视频已准备就绪（摄像头默认关闭）", Toast.LENGTH_SHORT).show();
             });
         }
 
@@ -828,7 +907,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                     surfaceViewRemote.setVisibility(View.VISIBLE);
                 }
                 
-                Toast.makeText(ChatActivity.this, "远程视频已连接", Toast.LENGTH_SHORT).show();
+                // Toast.makeText(ChatActivity.this, "远程视频已连接", Toast.LENGTH_SHORT).show();
             });
         }
 
@@ -836,7 +915,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         public void onIceGatheringComplete() {
             runOnUiThread(() -> {
                 Log.d(TAG, "ICE候选者收集完成");
-                Toast.makeText(ChatActivity.this, "网络连接准备就绪", Toast.LENGTH_SHORT).show();
+                // Toast.makeText(ChatActivity.this, "网络连接准备就绪", Toast.LENGTH_SHORT).show();
             });
         }
     };

@@ -553,6 +553,27 @@ public class WebRTCManager {
         }
     }
     //用于在WebRTC连接过程中，移除ICE候选者，以便建立或更新连接参数$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+    // 启用摄像头
+    public void enableCamera() {
+        if (localVideoTrack != null) {
+            localVideoTrack.setEnabled(true);
+            Log.d(TAG, "摄像头已启用");
+        }
+    }
+    
+    // 禁用摄像头
+    public void disableCamera() {
+        if (localVideoTrack != null) {
+            localVideoTrack.setEnabled(false);
+            Log.d(TAG, "摄像头已禁用");
+        }
+    }
+    
+    // 检查摄像头是否启用
+    public boolean isCameraEnabled() {
+        return localVideoTrack != null && localVideoTrack.enabled();
+    }
+    
     public void close() {
         if (localVideoTrack != null) {
             localVideoTrack.dispose();
