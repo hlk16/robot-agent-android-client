@@ -44,8 +44,8 @@ public class ChatActivity extends AppCompatActivity {
     private boolean isConnected = false;
 
     // 真机测试配置 - 根据您的网络信息配置
-    private static final String SERVER_URL = "ws://192.168.0.102:8000/ws/"; // 真机测试地址
-    // 模拟器测试请使用: "ws://10.0.2.2:8000/ws/"
+    private static final String SERVER_URL = "ws://192.168.0.102:8000/ws/chat/"; // 真机测试地址
+    // 模拟器测试请使用: "ws://10.0.2.2:8000/ws/chat/"
     // 当前配置基于您的IPv4地址: 192.168.0.102
 
     @Override
