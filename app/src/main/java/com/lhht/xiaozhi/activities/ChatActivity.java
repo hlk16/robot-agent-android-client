@@ -4,9 +4,11 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
+import android.view.SurfaceView;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -33,10 +35,13 @@ import okio.ByteString;
 
 public class ChatActivity extends AppCompatActivity {
 
-    private EditText etUserId, etNickname, etTargetUser, etMessage;
+    private EditText etUserId, etNickname, etTargetUser, etMessage, etRoomId;
     private TextView tvStatus, tvOnlineUsers, tvMessages;
     private Button btnConnect, btnSend, btnGetUsers, btnPing, btnClear;
     private Button btnForward, btnBackward, btnLeft, btnRight, btnStop;
+    private Button btnJoinRoom, btnCameraToggle, btnCall;
+    private SurfaceView surfaceViewRemote, surfaceViewLocal;
+    private LinearLayout layoutNoRemoteSignal, layoutNoLocalSignal;
 
     private WebSocket webSocket;
     private OkHttpClient client;
@@ -65,6 +70,7 @@ public class ChatActivity extends AppCompatActivity {
         etNickname = findViewById(R.id.etNickname);
         etTargetUser = findViewById(R.id.etTargetUser);
         etMessage = findViewById(R.id.etMessage);
+        etRoomId = findViewById(R.id.etRoomId);
 
         tvStatus = findViewById(R.id.tvStatus);
         tvOnlineUsers = findViewById(R.id.tvOnlineUsers);
@@ -82,6 +88,17 @@ public class ChatActivity extends AppCompatActivity {
         btnLeft = findViewById(R.id.btnLeft);
         btnRight = findViewById(R.id.btnRight);
         btnStop = findViewById(R.id.btnStop);
+        
+        // WebRTC相关按钮
+        btnJoinRoom = findViewById(R.id.btnJoinRoom);
+        btnCameraToggle = findViewById(R.id.btnCameraToggle);
+        btnCall = findViewById(R.id.callbutton);
+        
+        // 视频预览控件
+        surfaceViewRemote = findViewById(R.id.surfaceViewRemote);
+        surfaceViewLocal = findViewById(R.id.surfaceViewLocal);
+        layoutNoRemoteSignal = findViewById(R.id.layoutNoRemoteSignal);
+        layoutNoLocalSignal = findViewById(R.id.layoutNoLocalSignal);
     }
 
     private void initWebSocket() {

@@ -64,6 +64,9 @@ dependencies {
     // WebSocket
     implementation("org.java-websocket:Java-WebSocket:1.5.4")
     
+    // WebRTC
+    implementation("io.github.webrtc-sdk:android:104.5112.09")
+    
     // ConstraintLayout
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     

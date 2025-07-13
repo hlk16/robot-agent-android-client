@@ -26,14 +26,39 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <TextView
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="🔗 连接设置"
-                    android:textSize="18sp"
-                    android:textStyle="bold"
-                    android:textColor="#333333"
-                    android:layout_marginBottom="12dp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="12dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="🔗 连接设置"
+                        android:textSize="18sp"
+                        android:textStyle="bold"
+                        android:textColor="#333333" />
+
+                    <View
+                        android:id="@+id/statusIndicator"
+                        android:layout_width="12dp"
+                        android:layout_height="12dp"
+                        android:background="@drawable/status_indicator_red"
+                        android:layout_marginEnd="8dp" />
+
+                    <TextView
+                        android:id="@+id/tvStatus"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="📡 未连接"
+                        android:textColor="#666666"
+                        android:textSize="14sp"
+                        android:textStyle="bold" />
+
+                </LinearLayout>
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -75,6 +100,76 @@
 
                 </LinearLayout>
 
+                <!-- 目标用户设置 -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="12dp"
+                    app:boxStrokeColor="#667eea"
+                    app:hintTextColor="#667eea">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/etTargetUser"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="目标用户ID (可选，留空为广播)"
+                        android:text="user002" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- 在线用户列表 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginTop="12dp"
+                    android:background="@drawable/rounded_background"
+                    android:padding="12dp">
+
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="👥 在线用户"
+                            android:textSize="16sp"
+                            android:textStyle="bold"
+                            android:textColor="#333333" />
+
+                        <com.google.android.material.button.MaterialButton
+                            android:id="@+id/btnGetUsers"
+                            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="36dp"
+                            android:text="获取用户"
+                            android:textColor="#667eea"
+                            android:textSize="12sp"
+                            app:strokeColor="#667eea"
+                            app:cornerRadius="8dp"
+                            app:icon="@android:drawable/ic_menu_myplaces"
+                            app:iconTint="#667eea"
+                            app:iconSize="16dp" />
+
+                    </LinearLayout>
+
+                    <TextView
+                        android:id="@+id/tvOnlineUsers"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="暂无在线用户"
+                        android:textColor="#666666"
+                        android:textSize="14sp"
+                        android:background="@drawable/rounded_background"
+                        android:padding="12dp" />
+
+                </LinearLayout>
+
                 <com.google.android.material.button.MaterialButton
                     android:id="@+id/btnConnect"
                     android:layout_width="match_parent"
@@ -90,80 +185,7 @@
 
         </androidx.cardview.widget.CardView>
 
-        <!-- 连接状态显示 -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="4dp"
-            android:backgroundTint="@android:color/white">
 
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:padding="16dp"
-                android:gravity="center_vertical">
-
-                <View
-                    android:id="@+id/statusIndicator"
-                    android:layout_width="12dp"
-                    android:layout_height="12dp"
-                    android:background="@drawable/status_indicator_red"
-                    android:layout_marginEnd="12dp" />
-
-                <TextView
-                    android:id="@+id/tvStatus"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="📡 未连接"
-                    android:textColor="#666666"
-                    android:textSize="16sp"
-                    android:textStyle="bold" />
-
-            </LinearLayout>
-
-        </androidx.cardview.widget.CardView>
-
-        <!-- 在线用户列表 -->
-        <androidx.cardview.widget.CardView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:layout_marginBottom="16dp"
-            app:cardCornerRadius="12dp"
-            app:cardElevation="4dp"
-            android:backgroundTint="@android:color/white">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:padding="16dp">
-
-                <TextView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="👥 在线用户（可以查看机器狗是否在线，按键在最后）"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="#333333"
-                    android:layout_marginBottom="8dp" />
-
-                <TextView
-                    android:id="@+id/tvOnlineUsers"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="暂无在线用户"
-                    android:textColor="#666666"
-                    android:textSize="14sp"
-                    android:background="@drawable/rounded_background"
-                    android:padding="12dp" />
-
-            </LinearLayout>
-
-        </androidx.cardview.widget.CardView>
 
         <!-- 消息显示区域 -->
         <androidx.cardview.widget.CardView
@@ -213,7 +235,7 @@
 
         </androidx.cardview.widget.CardView>
 
-        <!-- 远程摄像头预览区域 -->
+        <!-- 视频通话预览区域 -->
         <androidx.cardview.widget.CardView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -231,59 +253,186 @@
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="📹 远程摄像头"
+                    android:text="📹 视频通话"
                     android:textSize="16sp"
                     android:textStyle="bold"
                     android:textColor="#333333"
                     android:layout_marginBottom="12dp" />
 
-                <!-- 16:9 摄像头预览窗口 -->
-                 <androidx.constraintlayout.widget.ConstraintLayout
-                     android:layout_width="match_parent"
-                     android:layout_height="wrap_content">
+                <!-- 本地视频预览窗口 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginBottom="8dp">
 
-                     <FrameLayout
-                         android:layout_width="0dp"
-                         android:layout_height="0dp"
-                         android:background="#000000"
-                         app:layout_constraintTop_toTopOf="parent"
-                         app:layout_constraintStart_toStartOf="parent"
-                         app:layout_constraintEnd_toEndOf="parent"
-                         app:layout_constraintDimensionRatio="16:9">
-
-                    <SurfaceView
-                        android:id="@+id/surfaceViewCamera"
+                    <TextView
                         android:layout_width="match_parent"
-                        android:layout_height="match_parent" />
+                        android:layout_height="wrap_content"
+                        android:text="本地视频"
+                        android:textSize="12sp"
+                        android:textColor="#666666"
+                        android:layout_marginBottom="4dp" />
 
-                    <!-- 无信号提示 -->
-                    <LinearLayout
-                        android:id="@+id/layoutNoSignal"
+                    <androidx.constraintlayout.widget.ConstraintLayout
                         android:layout_width="match_parent"
-                        android:layout_height="match_parent"
-                        android:orientation="vertical"
-                        android:gravity="center"
-                        android:background="#1A1A1A">
+                        android:layout_height="wrap_content">
 
-                        <ImageView
-                            android:layout_width="48dp"
-                            android:layout_height="48dp"
-                            android:src="@android:drawable/ic_menu_camera"
-                            android:layout_marginBottom="8dp"
-                            app:tint="#666666" />
+                        <FrameLayout
+                            android:layout_width="0dp"
+                            android:layout_height="0dp"
+                            android:background="#000000"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintDimensionRatio="16:9">
 
-                        <TextView
-                            android:layout_width="wrap_content"
+                            <SurfaceView
+                                android:id="@+id/surfaceViewLocal"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent" />
+
+                            <!-- 无信号提示 -->
+                            <LinearLayout
+                                android:id="@+id/layoutNoLocalSignal"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:orientation="vertical"
+                                android:gravity="center"
+                                android:background="#1A1A1A">
+
+                                <ImageView
+                                    android:layout_width="48dp"
+                                    android:layout_height="48dp"
+                                    android:src="@android:drawable/ic_menu_camera"
+                                    android:layout_marginBottom="8dp"
+                                    app:tint="#666666" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="等待本地摄像头连接..."
+                                    android:textColor="#999999"
+                                    android:textSize="14sp" />
+
+                            </LinearLayout>
+
+                        </FrameLayout>
+
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+
+                </LinearLayout>
+
+                <!-- 远程视频预览窗口 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginBottom="8dp">
+
+                    <TextView
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:text="远程视频"
+                        android:textSize="12sp"
+                        android:textColor="#666666"
+                        android:layout_marginBottom="4dp" />
+
+                    <androidx.constraintlayout.widget.ConstraintLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content">
+
+                        <FrameLayout
+                            android:layout_width="0dp"
+                            android:layout_height="0dp"
+                            android:background="#000000"
+                            app:layout_constraintTop_toTopOf="parent"
+                            app:layout_constraintStart_toStartOf="parent"
+                            app:layout_constraintEnd_toEndOf="parent"
+                            app:layout_constraintDimensionRatio="16:9">
+
+                            <SurfaceView
+                                android:id="@+id/surfaceViewRemote"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent" />
+
+                            <!-- 无信号提示 -->
+                            <LinearLayout
+                                android:id="@+id/layoutNoRemoteSignal"
+                                android:layout_width="match_parent"
+                                android:layout_height="match_parent"
+                                android:orientation="vertical"
+                                android:gravity="center"
+                                android:background="#1A1A1A">
+
+                                <ImageView
+                                    android:layout_width="48dp"
+                                    android:layout_height="48dp"
+                                    android:src="@android:drawable/ic_menu_camera"
+                                    android:layout_marginBottom="8dp"
+                                    app:tint="#666666" />
+
+                                <TextView
+                                    android:layout_width="wrap_content"
+                                    android:layout_height="wrap_content"
+                                    android:text="等待远程视频连接..."
+                                    android:textColor="#999999"
+                                    android:textSize="14sp" />
+
+                            </LinearLayout>
+
+                        </FrameLayout>
+
+                    </androidx.constraintlayout.widget.ConstraintLayout>
+
+                </LinearLayout>
+
+                <!-- 房间号输入区域 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="8dp">
+
+                    <com.google.android.material.textfield.TextInputLayout
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:layout_marginEnd="8dp"
+                        android:hint="输入房间号"
+                        app:boxBackgroundMode="outline"
+                        app:boxCornerRadiusTopStart="8dp"
+                        app:boxCornerRadiusTopEnd="8dp"
+                        app:boxCornerRadiusBottomStart="8dp"
+                        app:boxCornerRadiusBottomEnd="8dp">
+
+                        <com.google.android.material.textfield.TextInputEditText
+                            android:id="@+id/etRoomId"
+                            android:layout_width="match_parent"
                             android:layout_height="wrap_content"
-                            android:text="等待摄像头连接..."
-                            android:textColor="#999999"
-                            android:textSize="14sp" />
+                            android:inputType="text"
+                            android:maxLines="1"
+                            android:textSize="14sp"
+                            android:text="test_room" />
 
-                    </LinearLayout>
+                    </com.google.android.material.textfield.TextInputLayout>
 
-                     </FrameLayout>
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/btnJoinRoom"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="加入房间"
+                        android:textSize="12sp"
+                        android:textColor="@android:color/white"
+                        app:backgroundTint="#4CAF50"
+                        app:cornerRadius="8dp"
+                        app:icon="@android:drawable/ic_menu_add"
+                        app:iconSize="16dp"
+                        app:iconTint="@android:color/white" />
 
-                 </androidx.constraintlayout.widget.ConstraintLayout>
+                </LinearLayout>
 
                 <!-- 摄像头控制按钮 -->
                 <LinearLayout
@@ -291,7 +440,8 @@
                     android:layout_height="wrap_content"
                     android:orientation="horizontal"
                     android:gravity="center"
-                    android:layout_marginTop="12dp">
+                    android:layout_marginTop="4dp">
+
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnCameraToggle"
@@ -308,15 +458,15 @@
                         app:iconTint="@android:color/white" />
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnFullscreen"
+                        android:id="@+id/callbutton"
                         android:layout_width="wrap_content"
                         android:layout_height="36dp"
-                        android:text="全屏"
+                        android:text="呼叫"
                         android:textSize="12sp"
                         android:textColor="@android:color/white"
                         app:backgroundTint="#607D8B"
                         app:cornerRadius="18dp"
-                        app:icon="@android:drawable/ic_menu_zoom"
+                        app:icon="@drawable/ic_call"
                         app:iconSize="16dp"
                         app:iconTint="@android:color/white" />
 
@@ -486,22 +636,6 @@
                     android:textColor="#333333"
                     android:layout_marginBottom="12dp" />
 
-                <com.google.android.material.textfield.TextInputLayout
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:layout_marginBottom="12dp"
-                    app:boxStrokeColor="#667eea"
-                    app:hintTextColor="#667eea">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/etTargetUser"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:hint="目标用户ID (可选，留空为广播)"
-                        android:text="user002" />
-
-                </com.google.android.material.textfield.TextInputLayout>
-
                 <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -571,27 +705,12 @@
                     android:orientation="horizontal">
 
                     <com.google.android.material.button.MaterialButton
-                        android:id="@+id/btnGetUsers"
-                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
-                        android:layout_width="0dp"
-                        android:layout_height="wrap_content"
-                        android:layout_weight="1"
-                        android:layout_marginEnd="6dp"
-                        android:text="获取用户"
-                        android:textColor="#667eea"
-                        app:strokeColor="#667eea"
-                        app:cornerRadius="8dp"
-                        app:icon="@android:drawable/ic_menu_myplaces"
-                        app:iconTint="#667eea" />
-
-                    <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnPing"
                         style="@style/Widget.MaterialComponents.Button.OutlinedButton"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
                         android:layout_weight="1"
-                        android:layout_marginStart="3dp"
-                        android:layout_marginEnd="3dp"
+                        android:layout_marginEnd="6dp"
                         android:text="心跳"
                         android:textColor="#4CAF50"
                         app:strokeColor="#4CAF50"
