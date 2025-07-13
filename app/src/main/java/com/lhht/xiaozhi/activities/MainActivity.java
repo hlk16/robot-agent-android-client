@@ -74,7 +74,9 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
                     }
                     
                     if (!allGranted) {
-                        Toast.makeText(this, "部分权限被拒绝，某些功能可能无法使用", Toast.LENGTH_LONG).show();
+                        Toast.makeText(this, "部分权限被拒绝，视频通话、语音录制等功能可能无法使用", Toast.LENGTH_LONG).show();
+                    } else {
+                        Toast.makeText(this, "权限已授予，可以正常使用所有功能", Toast.LENGTH_SHORT).show();
                     }
                 });
         
@@ -83,6 +85,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     private static final int PERMISSION_REQUEST_CODE = 1;
     private static final String[] REQUIRED_PERMISSIONS = new String[]{
             Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CAMERA,
+            Manifest.permission.MODIFY_AUDIO_SETTINGS,
             Manifest.permission.BLUETOOTH_CONNECT,
             Manifest.permission.ACCESS_FINE_LOCATION
     };
@@ -244,7 +248,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         if (isFirstTime) {
             new AlertDialog.Builder(this)
                 .setTitle("欢迎使用小智助手")
-                .setMessage("欢迎使用小智智能助手！\n\n使用前请注意：\n1. 首次使用需要在设置中配置API信息\n2. 自己部署小智后端可以享受完整功能\n3. 连接虾哥服务器只能文字对话(bug)\n4.该项目作者b站电子裁缝-叫我康康，大学生作品bug多，更新慢。请谅解后续会慢慢更新\n◉5.该软件目前免费，如果付费可能被骗，可以点点举报\n\n点击确定开始使用！")
+                .setMessage("欢迎使用小智智能助手！\n\n使用前请注意：\n1. 首次使用需要在设置中配置API信息\n2. 自己部署小智后端可以享受完整功能\n3. 连接虾哥服务器只能文字对话(bug)\n4. 应用需要摄像头、麦克风权限用于视频通话功能\n5. 该项目作者b站电子裁缝-叫我康康，大学生作品bug多，更新慢。请谅解后续会慢慢更新\n◉6. 该软件目前免费，如果付费可能被骗，可以点点举报\n\n点击确定开始使用！")
                 .setPositiveButton("确定", (dialog, which) -> {
                     // 标记已显示过首次提示
                     SharedPreferences.Editor editor = prefs.edit();
