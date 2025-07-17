@@ -131,7 +131,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         initWebSocket();
         initAudio();
         setupListeners();
-        initImageRecognition();
+         initImageRecognition();
 
         // 初始化视频播放
         Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.boqijiang);
@@ -537,10 +537,17 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             
             // 检测语音指令并处理图像识别
             if (text != null && text.contains("看到了什么") && camera != null && isPreviewStarted) {
-                captureFrame();
+                // 检查图像识别管理器是否已初始化
+                if (imageRecognitionManager == null) {
+                    // 未配置讯飞API，显示提示信息
+                    Toast.makeText(Voice.this, "未配置讯飞API，无法使用图像识别功能，请在设置中配置", Toast.LENGTH_SHORT).show();
+                    // 可以选择跳转到设置页面
+                    // Intent intent = new Intent(Voice.this, SettingsActivity.class);
+                    // startActivity(intent);
+                } else {
+                    captureFrame();
+                }
             }
-
-
         });
     }
 
@@ -962,44 +969,71 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     //相机数据返回后端服务器
     private void initImageRecognition() {
-        imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
-            @Override
-            public void onRecognitionResult(String content) {
-                runOnUiThread(() -> {
-                    if (webSocketManager != null && webSocketManager.isConnected()) {
-                        try {
-                            JSONObject jsonMessage = new JSONObject();
-//                            jsonMessage.put("type", "user_intent");
-//                            jsonMessage.put("content", content);
-//                            jsonMessage.put("source", "image_recognition");
-//                            jsonMessage.put("expect_voice_response", true);
-                            jsonMessage.put("type", "listen");
-                            jsonMessage.put("state", "detect");
-                            jsonMessage.put("text", content);
-                            jsonMessage.put("source", "text");
-                            webSocketManager.sendMessage(jsonMessage.toString()+"你需要返回你识别的内容");
-                        } catch (Exception e) {
-                            Log.e("VoiceCall", "发送识别消息失败", e);
+        // 获取讯飞API配置
+        SettingsManager settingsManager = new SettingsManager(this);
+        String appId = settingsManager.getAppId();
+        String apiKey = settingsManager.getApiKey();
+        String apiSecret = settingsManager.getApiSecret();
+        
+        // 检查API配置是否为空
+        if (appId.isEmpty() || apiKey.isEmpty() || apiSecret.isEmpty()) {
+            // API未配置，不初始化图像识别管理器
+            imageRecognitionManager = null;
+            Log.w("VoiceCall", "讯飞API未配置，图像识别功能不可用");
+            return;
+        }
+        
+        // API已配置，初始化图像识别管理器
+        try {
+            imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
+                @Override
+                public void onRecognitionResult(String content) {
+                    runOnUiThread(() -> {
+                        if (webSocketManager != null && webSocketManager.isConnected()) {
+                            try {
+                                JSONObject jsonMessage = new JSONObject();
+//                                jsonMessage.put("type", "user_intent");
+//                                jsonMessage.put("content", content);
+//                                jsonMessage.put("source", "image_recognition");
+//                                jsonMessage.put("expect_voice_response", true);
+                                jsonMessage.put("type", "listen");
+                                jsonMessage.put("state", "detect");
+                                jsonMessage.put("text", content);
+                                jsonMessage.put("source", "text");
+                                webSocketManager.sendMessage(jsonMessage.toString()+"你需要返回你识别的内容");
+                            } catch (Exception e) {
+                                Log.e("VoiceCall", "发送识别消息失败", e);
+                            }
                         }
-                    }
-                    Toast.makeText(Voice.this, content, Toast.LENGTH_SHORT).show();
-                    Log.d("ImageRecognition", "识别结果: " + content);
-                });
-            }
+                        Toast.makeText(Voice.this, content, Toast.LENGTH_SHORT).show();
+                        Log.d("ImageRecognition", "识别结果: " + content);
+                    });
+                }
 
-
-            @Override
-            public void onRecognitionError(String errorMessage) {
-                runOnUiThread(() -> {
-                    Toast.makeText(Voice.this, "识别失败: " + errorMessage, Toast.LENGTH_SHORT).show();
-                    Log.e("ImageRecognition", "识别失败: " + errorMessage);
-                });
-            }
-        });
+                @Override
+                public void onRecognitionError(String errorMessage) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(Voice.this, "识别失败: " + errorMessage, Toast.LENGTH_SHORT).show();
+                        Log.e("ImageRecognition", "识别失败: " + errorMessage);
+                    });
+                }
+            });
+        } catch (Exception e) {
+            Log.e("VoiceCall", "初始化图像识别管理器失败", e);
+            Toast.makeText(this, "初始化图像识别失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            imageRecognitionManager = null;
+        }
     }
     //相机识别
     private void captureFrame() {
         if (camera == null) return;
+        
+        // 检查图像识别管理器是否已初始化
+        if (imageRecognitionManager == null) {
+            // 未配置讯飞API，显示提示信息
+            Toast.makeText(Voice.this, "未配置讯飞API，无法使用图像识别功能", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         camera.setPreviewCallback(new Camera.PreviewCallback() {
             @Override

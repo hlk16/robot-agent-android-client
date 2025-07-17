@@ -562,7 +562,13 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
 
             // 检测语音指令并处理图像识别
             if (text != null && text.contains("看到了什么") && camera != null && isPreviewStarted) {
-                captureFrame();
+                // 检查图像识别管理器是否已初始化
+                if (imageRecognitionManager == null) {
+                    // 未配置讯飞API，显示提示信息
+                    Toast.makeText(VoiceCallActivity.this, "未配置讯飞API，无法使用图像识别功能，请在设置中配置", Toast.LENGTH_SHORT).show();
+                } else {
+                    captureFrame();
+                }
             }
             else if(text != null && text.contains("向前走") ) {
                 order='a';
@@ -1019,27 +1025,54 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         }
     }
     private void initImageRecognition() {
-        imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
-            @Override
-            public void onRecognitionResult(String content) {
-                runOnUiThread(() -> {
+        // 获取讯飞API配置
+        SettingsManager settingsManager = new SettingsManager(this);
+        String appId = settingsManager.getAppId();
+        String apiKey = settingsManager.getApiKey();
+        String apiSecret = settingsManager.getApiSecret();
+        
+        // 检查API配置是否为空
+        if (appId.isEmpty() || apiKey.isEmpty() || apiSecret.isEmpty()) {
+            // API未配置，不初始化图像识别管理器
+            imageRecognitionManager = null;
+            Log.w("VoiceCallActivity", "讯飞API未配置，图像识别功能不可用");
+            return;
+        }
+        
+        // API已配置，初始化图像识别管理器
+        try {
+            imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
+                @Override
+                public void onRecognitionResult(String content) {
+                    runOnUiThread(() -> {
 
-                    Toast.makeText(VoiceCallActivity.this, content, Toast.LENGTH_SHORT).show();
-                    Log.d("ImageRecognition", "识别结果: " + content);
-                });
-            }
+                        Toast.makeText(VoiceCallActivity.this, content, Toast.LENGTH_SHORT).show();
+                        Log.d("ImageRecognition", "识别结果: " + content);
+                    });
+                }
 
-            @Override
-            public void onRecognitionError(String errorMessage) {
-                runOnUiThread(() -> {
-                    Toast.makeText(VoiceCallActivity.this, "识别失败: " + errorMessage, Toast.LENGTH_SHORT).show();
-                    Log.e("ImageRecognition", "识别失败: " + errorMessage);
-                });
-            }
-        });
+                @Override
+                public void onRecognitionError(String errorMessage) {
+                    runOnUiThread(() -> {
+                        Toast.makeText(VoiceCallActivity.this, "识别失败: " + errorMessage, Toast.LENGTH_SHORT).show();
+                        Log.e("ImageRecognition", "识别失败: " + errorMessage);
+                    });
+                }
+            });
+        } catch (Exception e) {
+            Log.e("VoiceCallActivity", "初始化图像识别管理器失败", e);
+            imageRecognitionManager = null;
+        }
     }
     private void captureFrame() {
         if (camera == null) return;
+        
+        // 检查图像识别管理器是否已初始化
+        if (imageRecognitionManager == null) {
+            // 未配置讯飞API，显示提示信息
+            Toast.makeText(VoiceCallActivity.this, "未配置讯飞API，无法使用图像识别功能", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
         camera.setPreviewCallback(new Camera.PreviewCallback() {
             @Override
