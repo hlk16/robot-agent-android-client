@@ -9,6 +9,8 @@ import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
 import android.media.MediaRecorder;
+import android.media.audiofx.AcousticEchoCanceler;
+import android.media.audiofx.NoiseSuppressor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -38,6 +40,9 @@ import vip.inode.demo.opusaudiodemo.utils.OpusUtils;
 import org.json.JSONObject;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 import android.hardware.Camera;
 import android.view.SurfaceHolder;
@@ -55,10 +60,10 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
     private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
-    //音频播放的缓冲区大小
-    private static final int PLAY_BUFFER_SIZE = 65536;
-    //Opus编码器的帧大小
-    private static final int OPUS_FRAME_SIZE = 960;
+    //音频播放的缓冲区大小 (增加到4倍最小缓冲区大小)
+    private static final int PLAY_BUFFER_SIZE = BUFFER_SIZE * 4;
+    //Opus编码器的帧大小 (优化为1440)
+    private static final int OPUS_FRAME_SIZE = 1440;
 
     private TextView aiMessageText;
     private TextView recognizedText;
@@ -97,6 +102,18 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private ImageRecognitionManager imageRecognitionManager;
     private ConnectedThread connectedThread;
     public static char order='x';
+    
+    // 回声消除相关
+    private AcousticEchoCanceler echoCanceler;
+    private NoiseSuppressor noiseSuppressor;
+    
+    // 音频播放队列
+    private BlockingQueue<byte[]> audioQueue;
+    private volatile boolean isPlaybackThreadRunning = false;
+    private ExecutorService playbackExecutor;
+    
+    // 音频焦点管理
+    private AudioManager.OnAudioFocusChangeListener audioFocusChangeListener;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -173,7 +190,22 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private void initAudio() {
         executorService = Executors.newSingleThreadExecutor();
         audioExecutor = Executors.newSingleThreadExecutor();
+        playbackExecutor = Executors.newSingleThreadExecutor();
         mainHandler = new Handler(Looper.getMainLooper());
+
+        // 设置音频会话模式为通信模式，有助于回声消除
+        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        
+        // 初始化音频焦点监听器
+        initAudioFocusListener();
+        
+        // 请求音频焦点
+        requestAudioFocus();
+        
+        // 初始化音频播放队列
+        audioQueue = new LinkedBlockingQueue<>();
+        startPlaybackThread();
 
         // 初始化Opus编解码器
         opusUtils = OpusUtils.getInstance();
@@ -190,8 +222,9 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         try {
             audioTrack = new AudioTrack.Builder()
                     .setAudioAttributes(new AudioAttributes.Builder()
-                            .setUsage(AudioAttributes.USAGE_MEDIA)
+                            .setUsage(AudioAttributes.USAGE_VOICE_COMMUNICATION)
                             .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                            .setFlags(AudioAttributes.FLAG_LOW_LATENCY)
                             .build())
                     .setAudioFormat(new AudioFormat.Builder()
                             .setEncoding(AUDIO_FORMAT)
@@ -366,12 +399,30 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private void startRecording() {
         if (audioRecord == null) {
             audioRecord = new AudioRecord(
-                    MediaRecorder.AudioSource.MIC,
+                    MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                     SAMPLE_RATE,
                     CHANNEL_CONFIG,
                     AUDIO_FORMAT,
                     BUFFER_SIZE
             );
+            
+            // 启用回声消除器
+            if (AcousticEchoCanceler.isAvailable()) {
+                echoCanceler = AcousticEchoCanceler.create(audioRecord.getAudioSessionId());
+                if (echoCanceler != null) {
+                    echoCanceler.setEnabled(true);
+                    Log.d("AudioDebug", "回声消除器已启用");
+                }
+            }
+            
+            // 启用噪声抑制器
+            if (NoiseSuppressor.isAvailable()) {
+                noiseSuppressor = NoiseSuppressor.create(audioRecord.getAudioSessionId());
+                if (noiseSuppressor != null) {
+                    noiseSuppressor.setEnabled(true);
+                    Log.d("AudioDebug", "噪声抑制器已启用");
+                }
+            }
         }
 
         executorService.execute(() -> {
@@ -430,10 +481,29 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
 
         AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         audioManager.setSpeakerphoneOn(isSpeakerOn);
+        
+        // 根据扬声器状态调整音频模式，优化回声抑制
+        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
     }
     //挂断
     private void endCall() {
         isRecording = false;
+        
+        // 停止播放线程
+        stopPlaybackThread();
+        
+        // 释放回声消除器和噪声抑制器
+        if (echoCanceler != null) {
+            echoCanceler.setEnabled(false);
+            echoCanceler.release();
+            echoCanceler = null;
+        }
+        if (noiseSuppressor != null) {
+            noiseSuppressor.setEnabled(false);
+            noiseSuppressor.release();
+            noiseSuppressor = null;
+        }
+        
         if (audioRecord != null) {
             audioRecord.stop();
             audioRecord.release();
@@ -444,6 +514,14 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             audioTrack.release();
             audioTrack = null;
         }
+        
+        // 恢复默认音频模式
+        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        audioManager.setMode(AudioManager.MODE_NORMAL);
+        
+        // 释放音频焦点
+        abandonAudioFocus();
+        
         finish();
     }
     //打断
@@ -691,24 +769,9 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
 
         audioExecutor.execute(() -> {
             try {
-                if (audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
-                    initAudioTrack();
-                    Log.d("AudioTrack", "Reinitialized audio track");
-                }
-
-                if (!isPlaying) {
-                    if (audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
-                        audioTrack.play();
-                        isPlaying = true;
-                        Log.d("AudioTrack", "Playback started");
-                    } else {
-                        Log.e("AudioTrack", "Failed to start playback: Invalid state");
-                    }
-                }
-
                 Log.d("AudioDebug", "收到音频数据长度: " + data.length + " bytes");
                 int decodedSamples = opusUtils.decode(decoderHandle, data, decodedBuffer);
-                Log.d("AudioDebug", "解码后PCM样本数: " + decodedSamples);
+                Log.d("AudioDebug", "解码样本数: " + decodedSamples);
 
                 if (decodedSamples > 0) {
                     byte[] pcmData = new byte[decodedSamples * 2];
@@ -717,10 +780,18 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                         pcmData[i * 2] = (byte) (sample & 0xff);
                         pcmData[i * 2 + 1] = (byte) ((sample >> 8) & 0xff);
                     }
-                    int bytesWritten = audioTrack.write(pcmData, 0, pcmData.length, AudioTrack.WRITE_BLOCKING);
-                    Log.d("AudioDebug", "写入AudioTrack字节数: " + bytesWritten);
-                    Log.d("AudioDebug", "AudioTrack状态: " + audioTrack.getPlayState() + ", 采样率: " + audioTrack.getSampleRate());
+                    
+                    Log.d("AudioDebug", "PCM数据长度: " + pcmData.length + " bytes");
+                    
+                    // 将音频数据加入播放队列
+                    boolean added = audioQueue.offer(pcmData);
+                    Log.d("AudioDebug", "音频数据入队: " + added + ", 队列大小: " + audioQueue.size());
+                    
+                    if (!added) {
+                        Log.w("AudioDebug", "音频队列已满，丢弃数据");
+                    }
 
+                    // 更新波形
                     float[] amplitudes = new float[decodedSamples];
                     for (int i = 0; i < decodedSamples; i++) {
                         amplitudes[i] = decodedBuffer[i] / 32768f;
@@ -731,6 +802,122 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 Log.e("VoiceCall", "处理音频数据失败", e);
             }
         });
+    }
+
+    // 启动播放线程
+    private void startPlaybackThread() {
+        if (isPlaybackThreadRunning) {
+            return;
+        }
+        
+        isPlaybackThreadRunning = true;
+        playbackExecutor.execute(() -> {
+            Log.d("PlaybackThread", "播放线程启动");
+            
+            while (isPlaybackThreadRunning) {
+                try {
+                    // 使用poll方法避免无限阻塞
+                    byte[] audioData = audioQueue.poll(100, TimeUnit.MILLISECONDS);
+                    
+                    if (audioData != null) {
+                        Log.d("PlaybackThread", "从队列取出音频数据: " + audioData.length + " bytes");
+                        
+                        // 确保AudioTrack已初始化
+                        if (audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
+                            initAudioTrack();
+                            Log.d("PlaybackThread", "重新初始化AudioTrack");
+                        }
+                        
+                        // 开始播放
+                        if (!isPlaying && audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
+                            audioTrack.play();
+                            isPlaying = true;
+                            Log.d("PlaybackThread", "开始播放");
+                        }
+                        
+                        // 写入音频数据
+                        if (audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
+                            int bytesWritten = audioTrack.write(audioData, 0, audioData.length, AudioTrack.WRITE_BLOCKING);
+                            Log.d("PlaybackThread", "写入AudioTrack字节数: " + bytesWritten);
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Log.d("PlaybackThread", "播放线程被中断");
+                    break;
+                } catch (Exception e) {
+                    Log.e("PlaybackThread", "播放线程异常", e);
+                }
+            }
+            
+            Log.d("PlaybackThread", "播放线程结束");
+        });
+    }
+    
+    // 停止播放线程
+    private void stopPlaybackThread() {
+        isPlaybackThreadRunning = false;
+        if (audioQueue != null) {
+            audioQueue.clear();
+        }
+        if (isPlaying && audioTrack != null) {
+            audioTrack.stop();
+            isPlaying = false;
+        }
+    }
+    
+    // 初始化音频焦点监听器
+    private void initAudioFocusListener() {
+        audioFocusChangeListener = new AudioManager.OnAudioFocusChangeListener() {
+            @Override
+            public void onAudioFocusChange(int focusChange) {
+                switch (focusChange) {
+                    case AudioManager.AUDIOFOCUS_GAIN:
+                        Log.d("AudioFocus", "获得音频焦点");
+                        if (audioTrack != null && !isPlaying) {
+                            audioTrack.play();
+                            isPlaying = true;
+                        }
+                        break;
+                    case AudioManager.AUDIOFOCUS_LOSS:
+                    case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                        Log.d("AudioFocus", "失去音频焦点");
+                        if (audioTrack != null && isPlaying) {
+                            audioTrack.pause();
+                            isPlaying = false;
+                        }
+                        break;
+                    case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                        Log.d("AudioFocus", "音频焦点降低音量");
+                        // 可以选择降低音量而不是暂停
+                        break;
+                }
+            }
+        };
+    }
+    
+    // 请求音频焦点
+    private void requestAudioFocus() {
+        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+        int result = audioManager.requestAudioFocus(
+            audioFocusChangeListener,
+            AudioManager.STREAM_VOICE_CALL,
+            AudioManager.AUDIOFOCUS_GAIN
+        );
+        
+        if (result == AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+            Log.d("AudioFocus", "音频焦点请求成功");
+        } else {
+            Log.w("AudioFocus", "音频焦点请求失败");
+        }
+    }
+    
+    // 释放音频焦点
+    private void abandonAudioFocus() {
+        if (audioFocusChangeListener != null) {
+            AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+            audioManager.abandonAudioFocus(audioFocusChangeListener);
+            Log.d("AudioFocus", "释放音频焦点");
+        }
     }
 
     @Override
@@ -761,6 +948,11 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         }
         executorService.shutdown();
         audioExecutor.shutdown();
+        
+        // 关闭播放线程池
+        if (playbackExecutor != null) {
+            playbackExecutor.shutdown();
+        }
     }
 
     @Override
