@@ -209,6 +209,13 @@ public class NavigationServiceManager {
     }
     
     /**
+     * 获取导航服务实例（用于调试）
+     */
+    public NavigationBackgroundService getNavigationService() {
+        return navigationService;
+    }
+    
+    /**
      * 获取当前位置
      */
     public Location getCurrentLocation() {

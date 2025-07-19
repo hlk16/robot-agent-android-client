@@ -21,6 +21,7 @@ import androidx.core.content.ContextCompat;
 import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.activities.webrtc.SignalingClient;
 import com.lhht.xiaozhi.activities.webrtc.WebRTCManager;
+import com.lhht.xiaozhi.managers.NavigationServiceManager;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -56,6 +57,9 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private Button btnJoinRoom, btnCameraToggle, btnCall, btnEndCall;
     private SurfaceViewRenderer surfaceViewRemote, surfaceViewLocal;
     private LinearLayout layoutNoRemoteSignal, layoutNoLocalSignal;
+    
+    // 导航信息显示UI元素
+    private TextView tvDestinationDistance, tvCurrentDirection, tvNextTurnDistance;
 
     private WebSocket webSocket;
     private OkHttpClient client;
@@ -70,6 +74,13 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private boolean isWebRTCConnected = false;
     private boolean isInCall = false;
     private boolean isCameraEnabled = false; // 摄像头状态，默认关闭
+    
+    // 导航服务相关
+    private NavigationServiceManager navigationServiceManager;
+    private Handler navigationUpdateHandler;
+    private Runnable navigationUpdateRunnable;
+    private boolean isNavigationUpdating = false;
+    private boolean pendingNavigationStart = false;
 
     // 真机测试配置 - 根据您的网络信息配置
     private static final String SERVER_URL = "ws://192.168.0.102:8000/ws/chat/"; // 真机测试地址
@@ -92,6 +103,19 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         // 生成唯一的客户端ID
         clientId = "client_" + UUID.randomUUID().toString().substring(0, 8);
         Log.d(TAG, "客户端ID: " + clientId);
+        
+        // 初始化导航服务管理器
+        initNavigationService();
+        
+        // 初始化导航信息更新处理器
+        initNavigationUpdateHandler();
+        
+        // 预启动导航服务以减少延迟
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                == PackageManager.PERMISSION_GRANTED) {
+            navigationServiceManager.startAndBindService();
+            Log.d(TAG, "预启动导航服务");
+        }
     }
 
     private void initViews() {
@@ -130,6 +154,11 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         surfaceViewLocal = findViewById(R.id.surfaceViewLocal);
         layoutNoRemoteSignal = findViewById(R.id.layoutNoRemoteSignal);
         layoutNoLocalSignal = findViewById(R.id.layoutNoLocalSignal);
+        
+        // 导航信息显示UI元素
+        tvDestinationDistance = findViewById(R.id.tvDestinationDistance);
+        tvCurrentDirection = findViewById(R.id.tvCurrentDirection);
+        tvNextTurnDistance = findViewById(R.id.tvNextTurnDistance);
     }
 
     private void initWebSocket() {
@@ -326,6 +355,17 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         String content = json.getString("content");
         String timestamp = json.optString("timestamp", getCurrentTime());
 
+        // 检测导航命令
+        if (content != null && (content.contains("自动导航") || content.contains("自动导航") ||
+            content.contains("[控制指令] 自动导航") || content.contains("[控制指令] 自动导航"))) {
+            // 显示Toast提示
+            Toast.makeText(this, "收到导航指令：开始导航", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "检测到导航命令: " + content);
+            
+            // 启动导航服务并导航到驿站
+            startNavigationToYizhan();
+        }
+
         addMessage(fromNickname + "(" + fromUserId + ")", content, timestamp);
     }
 
@@ -477,7 +517,9 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         String[] permissions = {
                 Manifest.permission.CAMERA,
                 Manifest.permission.RECORD_AUDIO,
-                Manifest.permission.MODIFY_AUDIO_SETTINGS
+                Manifest.permission.MODIFY_AUDIO_SETTINGS,
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_BACKGROUND_LOCATION
         };
 
         boolean allGranted = true;
@@ -500,17 +542,35 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == PERMISSION_REQUEST_CODE) {
             boolean allGranted = true;
-            for (int result : grantResults) {
-                if (result != PackageManager.PERMISSION_GRANTED) {
+            StringBuilder deniedPermissions = new StringBuilder();
+            
+            for (int i = 0; i < permissions.length; i++) {
+                if (grantResults[i] != PackageManager.PERMISSION_GRANTED) {
                     allGranted = false;
-                    break;
+                    if (permissions[i].equals(Manifest.permission.ACCESS_FINE_LOCATION) ||
+                        permissions[i].equals(Manifest.permission.ACCESS_BACKGROUND_LOCATION)) {
+                        deniedPermissions.append("定位权限 ");
+                    } else if (permissions[i].equals(Manifest.permission.CAMERA)) {
+                        deniedPermissions.append("摄像头权限 ");
+                    } else if (permissions[i].equals(Manifest.permission.RECORD_AUDIO)) {
+                        deniedPermissions.append("麦克风权限 ");
+                    }
                 }
             }
 
             if (allGranted) {
                 initializeWebRTC();
+                Toast.makeText(this, "所有权限已授予", Toast.LENGTH_SHORT).show();
             } else {
-                 Toast.makeText(this, "需要摄像头和麦克风权限才能进行视频通话", Toast.LENGTH_LONG).show();
+                String message = "缺少权限: " + deniedPermissions.toString() + "\n部分功能可能无法使用";
+                Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                // 即使部分权限被拒绝，也尝试初始化WebRTC（如果有摄像头和麦克风权限）
+                boolean hasWebRTCPermissions = 
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED &&
+                    ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED;
+                if (hasWebRTCPermissions) {
+                    initializeWebRTC();
+                }
             }
         }
     }
@@ -939,5 +999,251 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         if (signalingClient != null) {
             signalingClient.close();
         }
+        
+        // 清理导航服务
+        stopNavigationUpdates();
+        if (navigationServiceManager != null) {
+            navigationServiceManager.cleanup();
+        }
+    }
+    
+    // ==================== 导航相关方法 ====================
+    
+    /**
+     * 初始化导航服务管理器
+     */
+    private void initNavigationService() {
+        navigationServiceManager = NavigationServiceManager.getInstance(this);
+        navigationServiceManager.setServiceConnectionListener(new NavigationServiceManager.ServiceConnectionListener() {
+            @Override
+            public void onServiceConnected() {
+                runOnUiThread(() -> {
+                    Log.d(TAG, "导航服务已连接");
+                    Toast.makeText(ChatActivity.this, "导航服务已连接", Toast.LENGTH_SHORT).show();
+                    
+                    // 如果有待启动的导航，现在启动
+                    if (pendingNavigationStart) {
+                        pendingNavigationStart = false;
+                        startNavigationToDestination();
+                    }
+                });
+            }
+            
+            @Override
+            public void onServiceDisconnected() {
+                runOnUiThread(() -> {
+                    Log.d(TAG, "导航服务已断开");
+                    stopNavigationUpdates();
+                    clearNavigationInfo();
+                });
+            }
+        });
+    }
+    
+    /**
+     * 初始化导航信息更新处理器
+     */
+    private void initNavigationUpdateHandler() {
+        navigationUpdateHandler = new Handler(Looper.getMainLooper());
+        navigationUpdateRunnable = new Runnable() {
+            @Override
+            public void run() {
+                updateNavigationInfo();
+                if (isNavigationUpdating) {
+                    navigationUpdateHandler.postDelayed(this, 2000); // 每2秒更新一次
+                }
+            }
+        };
+    }
+    
+    /**
+     * 启动导航到驿站
+     */
+    private void startNavigationToYizhan() {
+        Log.d(TAG, "开始启动导航到驿站");
+        
+        // 检查定位权限
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "需要定位权限才能启动导航", Toast.LENGTH_LONG).show();
+            
+            // 发送权限缺失消息到聊天
+            etMessage.setText("导航启动失败：缺少定位权限，请在设置中授予定位权限后重试");
+            sendChatMessage();
+            etMessage.setText("");
+            
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                               Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+                    PERMISSION_REQUEST_CODE);
+            return;
+        }
+        
+        // 启动并绑定导航服务
+        if (!navigationServiceManager.isServiceConnected()) {
+            // 设置待启动标志，等待服务连接回调
+            pendingNavigationStart = true;
+            navigationServiceManager.startAndBindService();
+            Toast.makeText(this, "正在启动导航服务...", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "导航服务未连接，正在启动服务并设置待启动标志");
+            
+            // 设置超时检查，如果5秒后服务仍未连接，则提示失败
+            mainHandler.postDelayed(() -> {
+                if (pendingNavigationStart && !navigationServiceManager.isServiceConnected()) {
+                    pendingNavigationStart = false;
+                    Toast.makeText(this, "导航服务启动超时，请重试", Toast.LENGTH_LONG).show();
+                    
+                    // 发送服务启动超时消息到聊天
+                    etMessage.setText("导航服务启动超时，请检查网络连接后重试");
+                    sendChatMessage();
+                    etMessage.setText("");
+                    
+                    Log.w(TAG, "导航服务启动超时");
+                }
+            }, 5000);
+        } else {
+            // 服务已连接，直接启动导航
+            startNavigationToDestination();
+        }
+    }
+    
+    /**
+     * 启动导航到目的地
+     */
+    private void startNavigationToDestination() {
+        Log.d(TAG, "准备启动导航到驿站，服务连接状态: " + navigationServiceManager.isServiceConnected());
+        
+        if (navigationServiceManager.startNavigationToDestination("驿站")) {
+            Toast.makeText(this, "开始导航到驿站", Toast.LENGTH_SHORT).show();
+            
+            // 发送导航启动成功消息到聊天
+            etMessage.setText("导航启动成功，正在前往驿站");
+            sendChatMessage();
+            etMessage.setText("");
+            
+            // 延迟启动更新，给导航服务一些时间初始化
+            mainHandler.postDelayed(() -> {
+                startNavigationUpdates();
+                Log.d(TAG, "延迟启动导航信息更新");
+            }, 3000); // 延迟3秒
+            
+            Log.d(TAG, "导航已启动到驿站");
+        } else {
+            Toast.makeText(this, "启动导航失败，请检查服务状态", Toast.LENGTH_SHORT).show();
+            
+            // 发送导航启动失败消息到聊天
+            etMessage.setText("导航启动失败，请检查GPS设置和网络连接");
+            sendChatMessage();
+            etMessage.setText("");
+            
+            Log.w(TAG, "启动导航失败");
+        }
+    }
+    
+    /**
+     * 开始更新导航信息
+     */
+    private void startNavigationUpdates() {
+        isNavigationUpdating = true;
+        navigationUpdateHandler.post(navigationUpdateRunnable);
+        Log.d(TAG, "开始更新导航信息");
+    }
+    
+    /**
+     * 停止更新导航信息
+     */
+    private void stopNavigationUpdates() {
+        isNavigationUpdating = false;
+        if (navigationUpdateHandler != null) {
+            navigationUpdateHandler.removeCallbacks(navigationUpdateRunnable);
+        }
+        Log.d(TAG, "停止更新导航信息");
+    }
+    
+    /**
+     * 更新导航信息显示
+     */
+    private void updateNavigationInfo() {
+        if (!navigationServiceManager.isServiceConnected()) {
+            Log.w(TAG, "导航服务未连接，停止更新");
+            return;
+        }
+        
+        try {
+            // 获取导航数据
+            int distanceToDestination = navigationServiceManager.getDistanceToDestination();
+            String currentDirection = navigationServiceManager.getCurrentDirection();
+            int distanceToNext = navigationServiceManager.getDistanceToNextTurn();
+            boolean isNavigating = navigationServiceManager.isNavigating();
+            
+            // 检查导航服务的详细状态
+            if (navigationServiceManager.getNavigationService() != null) {
+                android.location.Location currentLoc = navigationServiceManager.getNavigationService().getCurrentLocation();
+                Log.d(TAG, "当前位置: " + (currentLoc != null ? 
+                    currentLoc.getLatitude() + "," + currentLoc.getLongitude() : "null"));
+            }
+            
+            Log.d(TAG, "导航信息更新 - 距离: " + distanceToDestination + 
+                  "m, 方向: " + currentDirection + ", 下一转向: " + distanceToNext + "m, 导航状态: " + isNavigating);
+            
+            if (isNavigating && distanceToDestination > 0) {
+                // 更新UI
+                tvDestinationDistance.setText(NavigationServiceManager.formatDistance(distanceToDestination));
+                tvCurrentDirection.setText(currentDirection);
+                tvNextTurnDistance.setText(NavigationServiceManager.formatDistance(distanceToNext));
+            } else {
+                // 导航结束或无效数据，停止更新
+                String reason = isNavigating ? "距离无效(" + distanceToDestination + ")" : "导航未启动";
+                etMessage.setText("位置未到可导航点请重新启动导航");
+                sendChatMessage();
+                Log.d(TAG, "停止更新导航信息 - 原因: " + reason);
+                stopNavigationUpdates();
+                clearNavigationInfo();
+                
+                if (isNavigationUpdating) {
+                    // 根据具体原因发送不同的消息
+                    if (!isNavigating) {
+                        Toast.makeText(this, "导航服务异常，导航已停止", Toast.LENGTH_SHORT).show();
+                        // 发送导航失败消息到聊天
+                        etMessage.setText("导航失败：导航服务异常，请重新启动导航");
+                        sendChatMessage();
+                        etMessage.setText("");
+                    } else if (distanceToDestination <= 0) {
+                        Toast.makeText(this, "导航数据异常，导航已停止", Toast.LENGTH_SHORT).show();
+                        // 发送导航失败消息到聊天
+                        etMessage.setText("导航失败：无法获取有效的导航数据，请检查GPS信号");
+                        sendChatMessage();
+                        etMessage.setText("");
+                    } else {
+                        Toast.makeText(this, "导航已结束", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            }
+            
+        } catch (Exception e) {
+            Log.e(TAG, "更新导航信息失败: " + e.getMessage());
+            
+            // 发生异常时停止导航更新并发送失败消息
+            if (isNavigationUpdating) {
+                stopNavigationUpdates();
+                clearNavigationInfo();
+                Toast.makeText(this, "导航数据获取异常", Toast.LENGTH_SHORT).show();
+                
+                // 发送导航异常消息到聊天
+                etMessage.setText("导航失败：导航数据获取异常，请重新启动导航");
+                sendChatMessage();
+                etMessage.setText("");
+            }
+        }
+    }
+    
+    /**
+     * 清空导航信息显示
+     */
+    private void clearNavigationInfo() {
+        tvDestinationDistance.setText("-- 米");
+        tvCurrentDirection.setText("--");
+        tvNextTurnDistance.setText("-- 米");
+        Log.d(TAG, "清空导航信息显示");
     }
 }
