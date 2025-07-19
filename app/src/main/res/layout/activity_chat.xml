@@ -250,6 +250,8 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
+
+
                 <TextView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -515,6 +517,28 @@
                     android:textStyle="bold"
                     android:textColor="#333333"
                     android:layout_marginBottom="12dp" />
+
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginBottom="12dp"
+                    app:boxStrokeColor="#667eea"
+                    app:hintTextColor="#667eea">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/edit_dest"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:hint="目的地"
+                        android:text="驿站" />
+
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <Button
+                    android:id="@+id/NavButten"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="自动导航" />
 
                 <!-- 第一行：前进按钮 -->
                 <LinearLayout

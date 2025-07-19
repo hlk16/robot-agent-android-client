@@ -52,6 +52,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private TextView tvStatus, tvOnlineUsers, tvMessages;
     private Button btnConnect, btnSend, btnGetUsers, btnPing, btnClear;
     private Button btnForward, btnBackward, btnLeft, btnRight, btnStop;
+    private Button btnNavigation; // 自动导航按钮
     private Button btnJoinRoom, btnCameraToggle, btnCall, btnEndCall;
     private SurfaceViewRenderer surfaceViewRemote, surfaceViewLocal;
     private LinearLayout layoutNoRemoteSignal, layoutNoLocalSignal;
@@ -116,6 +117,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         btnLeft = findViewById(R.id.btnLeft);
         btnRight = findViewById(R.id.btnRight);
         btnStop = findViewById(R.id.btnStop);
+        btnNavigation = findViewById(R.id.NavButten); // 自动导航按钮
         
         // WebRTC相关按钮
         btnJoinRoom = findViewById(R.id.btnJoinRoom);
@@ -158,6 +160,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         btnLeft.setOnClickListener(v -> sendQuickCommand("左转"));
         btnRight.setOnClickListener(v -> sendQuickCommand("右转"));
         btnStop.setOnClickListener(v -> sendQuickCommand("停止"));
+        btnNavigation.setOnClickListener(v -> sendQuickCommand("自动导航")); // 自动导航按钮点击事件
         
         // WebRTC相关按钮点击事件
         btnJoinRoom.setOnClickListener(v -> {
