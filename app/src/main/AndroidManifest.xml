@@ -11,6 +11,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.INTERNET" /> <!-- 访问网络获取服务 -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -21,7 +22,12 @@
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" /> <!-- 需要外部存储写权限用于日志 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" /> <!-- 添加相机权限 -->
     <uses-permission android:name="android.permission.CAMERA" /> <!-- 高采样率传感器权限，导航SDK需要 -->
-    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" /> <!-- 前台服务权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- 前台位置服务权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- 后台位置权限 -->
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <uses-feature android:name="android.hardware.camera" />
     <uses-feature android:name="android.hardware.camera.autofocus" />
@@ -42,6 +48,9 @@
             android:exported="false" />
         <activity
             android:name=".activities.WalkNaviActivity"
+            android:exported="false" />
+        <activity
+            android:name=".activities.NavigationTestActivity"
             android:exported="false" />
 
         <meta-data
@@ -84,6 +93,13 @@
             android:exported="false"
             android:screenOrientation="landscape"
             android:theme="@style/Theme.XiaoZhi.VoiceCall" />
+        
+        <!-- 导航后台服务 -->
+        <service
+            android:name=".services.NavigationBackgroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
     </application>
 
 </manifest>

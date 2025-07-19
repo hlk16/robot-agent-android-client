@@ -69,6 +69,8 @@ public class menu extends AppCompatActivity {
         });
         manus.setOnClickListener(view -> {
             Toast.makeText(this, "敬请期待", Toast.LENGTH_SHORT).show();
+            Intent intent = new Intent(menu.this, NavigationTestActivity.class);
+            startActivity(intent);
         });
         navgation.setOnClickListener(view -> {
             Intent intent = new Intent(menu.this, WalkNaviActivity.class);
