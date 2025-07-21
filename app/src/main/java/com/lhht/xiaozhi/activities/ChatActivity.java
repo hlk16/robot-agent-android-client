@@ -26,6 +26,7 @@ import com.lhht.xiaozhi.managers.NavigationServiceManager;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import org.opencv.android.OpenCVLoader;
 import org.webrtc.IceCandidate;
 import org.webrtc.SessionDescription;
 import org.webrtc.SurfaceViewRenderer;
@@ -95,6 +96,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
         initViews();
         initWebSocket();
+        iniLoadOpenCV();
         setupClickListeners();
         checkPermissions();
 
@@ -1245,5 +1247,15 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         tvCurrentDirection.setText("--");
         tvNextTurnDistance.setText("-- 米");
         Log.d(TAG, "清空导航信息显示");
+    }
+
+    private  void  iniLoadOpenCV(){
+        boolean loaded = OpenCVLoader.initDebug();
+        if (loaded) {
+            Toast.makeText(this, "OpenCV 加载成功", Toast.LENGTH_SHORT).show();
+        } else {
+            Toast.makeText(this, "OpenCV 加载失败", Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "OpenCV 加载失败");
+        }
     }
 }

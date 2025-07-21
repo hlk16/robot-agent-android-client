@@ -39,3 +39,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "xiaozhi"
 include(":app")
+include(":sdk")

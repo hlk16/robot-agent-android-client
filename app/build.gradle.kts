@@ -51,12 +51,20 @@ android {
     buildFeatures {
         viewBinding = true
     }
+
+    packagingOptions {
+        pickFirst("lib/arm64-v8a/libc++_shared.so")
+        pickFirst("lib/armeabi-v7a/libc++_shared.so")
+        pickFirst("lib/x86/libc++_shared.so")
+        pickFirst("lib/x86_64/libc++_shared.so")
+    }
 }
 
 dependencies {
     implementation(libs.appcompat)
     implementation("com.google.android.material:material:1.11.0")
     implementation(libs.activity)
+    implementation(project(":sdk"))
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
