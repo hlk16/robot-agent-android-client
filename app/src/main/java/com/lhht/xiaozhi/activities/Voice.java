@@ -335,7 +335,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 //            previewButton.setImageResource(R.drawable.baseline_videocam_24);
 //        }
 //    }
-
+//===
     private void startCall() {
         if (!webSocketManager.isConnected()) {
             updateCallStatus("未连接");
@@ -499,7 +499,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }
         finish();
     }
-    //打断
+    //打断===
     private void interruptAiResponse() {
         if (webSocketManager != null && webSocketManager.isConnected()) {
             try {
@@ -983,7 +983,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             return;
         }
         
-        // API已配置，初始化图像识别管理器
+        // API已配置，初始化图像识别管理器===
         try {
             imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
                 @Override

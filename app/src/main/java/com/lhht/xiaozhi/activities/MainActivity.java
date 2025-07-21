@@ -360,7 +360,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             Log.e("MainActivity", "创建AudioTrack失败", e);
         }
 
-        // 初始化 Opus 编解码器
+        // 初始化 Opus 编解码器===
         opusUtils = OpusUtils.getInstance();
         encoderHandle = opusUtils.createEncoder(SAMPLE_RATE, 1, 10);
         decoderHandle = opusUtils.createDecoder(SAMPLE_RATE, 1);
@@ -409,7 +409,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         Intent intent = new Intent(MainActivity.this, Voice.class);
         startActivity(intent);
     }
-
+//===
     private void sendMessage() {
         String message = messageInput.getText().toString().trim();
         if (!message.isEmpty() && webSocketManager.isConnected()) {

@@ -270,19 +270,23 @@ public class WebRTCManager {
             enumerator = new Camera1Enumerator(true);
         }
         
+        // 优先选择后置摄像头
         for (String deviceName : enumerator.getDeviceNames()) {
-            if (enumerator.isFrontFacing(deviceName)) {
+            if (!enumerator.isFrontFacing(deviceName)) {
                 VideoCapturer videoCapturer = enumerator.createCapturer(deviceName, null);
                 if (videoCapturer != null) {
+                    Log.d(TAG, "使用后置摄像头: " + deviceName);
                     return videoCapturer;
                 }
             }
         }
         
+        // 如果没有后置摄像头，则使用前置摄像头
         for (String deviceName : enumerator.getDeviceNames()) {
-            if (!enumerator.isFrontFacing(deviceName)) {
+            if (enumerator.isFrontFacing(deviceName)) {
                 VideoCapturer videoCapturer = enumerator.createCapturer(deviceName, null);
                 if (videoCapturer != null) {
+                    Log.d(TAG, "使用前置摄像头: " + deviceName);
                     return videoCapturer;
                 }
             }
