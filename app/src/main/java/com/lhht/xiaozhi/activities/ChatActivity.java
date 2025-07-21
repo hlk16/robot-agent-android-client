@@ -22,6 +22,9 @@ import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.activities.webrtc.SignalingClient;
 import com.lhht.xiaozhi.activities.webrtc.WebRTCManager;
 import com.lhht.xiaozhi.managers.NavigationServiceManager;
+import com.lhht.xiaozhi.managers.DataManager;
+import com.lhht.xiaozhi.services.CameraDetectionService;
+import android.content.Intent;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -82,6 +85,13 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private Runnable navigationUpdateRunnable;
     private boolean isNavigationUpdating = false;
     private boolean pendingNavigationStart = false;
+    
+    // OpenCV检测服务相关
+    private DataManager dataManager;
+    private boolean isDetectionServiceRunning = false;
+    private Handler detectionUpdateHandler;
+    private Runnable detectionUpdateRunnable;
+    private TextView tvDetectionStatus, tvDetectionData;
 
     // 真机测试配置 - 根据您的网络信息配置
     private static final String SERVER_URL = "ws://192.168.0.102:8000/ws/chat/"; // 真机测试地址
@@ -111,6 +121,12 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         
         // 初始化导航信息更新处理器
         initNavigationUpdateHandler();
+        
+        // 初始化检测数据管理器
+        dataManager = DataManager.getInstance(this);
+        
+        // 初始化检测信息更新处理器
+        initDetectionUpdateHandler();
         
         // 预启动导航服务以减少延迟
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
@@ -161,6 +177,10 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         tvDestinationDistance = findViewById(R.id.tvDestinationDistance);
         tvCurrentDirection = findViewById(R.id.tvCurrentDirection);
         tvNextTurnDistance = findViewById(R.id.tvNextTurnDistance);
+        
+        // 检测信息显示UI元素
+        tvDetectionStatus = findViewById(R.id.tvDetectionStatus);
+        tvDetectionData = findViewById(R.id.tvDetectionData);
     }
 
     private void initWebSocket() {
@@ -366,6 +386,10 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             
             // 启动导航服务并导航到驿站
             startNavigationToYizhan();
+            
+            // 启动OpenCV图像检测服务
+            startCameraDetectionService();
+            
         }
 
         addMessage(fromNickname + "(" + fromUserId + ")", content, timestamp);
@@ -1007,6 +1031,14 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         if (navigationServiceManager != null) {
             navigationServiceManager.cleanup();
         }
+        
+        // 停止检测服务
+        if (isDetectionServiceRunning) {
+            stopCameraDetectionService();
+        }
+        
+        // 清理检测更新处理器
+        stopDetectionUpdates();
     }
     
     // ==================== 导航相关方法 ====================
@@ -1256,6 +1288,107 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         } else {
             Toast.makeText(this, "OpenCV 加载失败", Toast.LENGTH_SHORT).show();
             Log.e(TAG, "OpenCV 加载失败");
+        }
+    }
+    
+    /**
+     * 启动OpenCV图像检测服务
+     */
+    private void startCameraDetectionService() {
+        // 检查摄像头权限
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
+                != PackageManager.PERMISSION_GRANTED) {
+            Toast.makeText(this, "需要摄像头权限才能启动图像检测", Toast.LENGTH_LONG).show();
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.CAMERA},
+                    PERMISSION_REQUEST_CODE);
+            return;
+        }
+        
+        if (!isDetectionServiceRunning) {
+            Intent serviceIntent = new Intent(this, CameraDetectionService.class);
+            startForegroundService(serviceIntent);
+            isDetectionServiceRunning = true;
+            
+            // 开始更新检测信息显示
+            startDetectionUpdates();
+            
+            Toast.makeText(this, "图像检测服务已启动", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "OpenCV图像检测服务已启动");
+        } else {
+            Toast.makeText(this, "图像检测服务已在运行", Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    /**
+     * 停止OpenCV图像检测服务
+     */
+    private void stopCameraDetectionService() {
+        if (isDetectionServiceRunning) {
+            Intent serviceIntent = new Intent(this, CameraDetectionService.class);
+            stopService(serviceIntent);
+            isDetectionServiceRunning = false;
+            
+            // 停止更新检测信息显示
+            stopDetectionUpdates();
+            
+            Toast.makeText(this, "图像检测服务已停止", Toast.LENGTH_SHORT).show();
+            Log.d(TAG, "OpenCV图像检测服务已停止");
+        }
+    }
+    
+    /**
+     * 初始化检测信息更新处理器
+     */
+    private void initDetectionUpdateHandler() {
+        detectionUpdateHandler = new Handler(Looper.getMainLooper());
+        detectionUpdateRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (isDetectionServiceRunning) {
+                    updateDetectionInfo();
+                    detectionUpdateHandler.postDelayed(this, 500); // 每500ms更新一次
+                }
+            }
+        };
+    }
+    
+    /**
+     * 开始更新检测信息
+     */
+    private void startDetectionUpdates() {
+        if (detectionUpdateHandler != null && detectionUpdateRunnable != null) {
+            detectionUpdateHandler.post(detectionUpdateRunnable);
+            Log.d(TAG, "开始更新检测信息");
+        }
+    }
+    
+    /**
+     * 停止更新检测信息
+     */
+    private void stopDetectionUpdates() {
+        if (detectionUpdateHandler != null && detectionUpdateRunnable != null) {
+            detectionUpdateHandler.removeCallbacks(detectionUpdateRunnable);
+            Log.d(TAG, "停止更新检测信息");
+        }
+    }
+    
+    /**
+     * 更新检测信息显示
+     */
+    private void updateDetectionInfo() {
+        if (dataManager != null && tvDetectionStatus != null && tvDetectionData != null) {
+            // 更新检测状态
+            tvDetectionStatus.setText(dataManager.getDetectionStatus());
+            
+            // 更新检测数据
+            tvDetectionData.setText(dataManager.getFormattedDelta());
+            
+            // 如果有有效数据，可以在这里添加更多的UI更新逻辑
+            if (dataManager.isDataValid() && dataManager.isCircleDetected()) {
+                Log.d(TAG, "检测到目标 - X偏差: " + dataManager.getDeltaX() + 
+                      ", Y偏差: " + dataManager.getDeltaY());
+            }
         }
     }
 }

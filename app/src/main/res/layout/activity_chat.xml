@@ -894,7 +894,74 @@
                             android:background="@drawable/rounded_background"
                             android:padding="6dp" />
                     </LinearLayout>
+                </LinearLayout>
 
+            </LinearLayout>
+
+        </androidx.cardview.widget.CardView>
+
+        <!-- OpenCV图像检测信息显示区域 -->
+        <androidx.cardview.widget.CardView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            app:cardCornerRadius="12dp"
+            app:cardElevation="4dp"
+            android:backgroundTint="@android:color/white">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:padding="16dp">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="📷 图像检测信息"
+                    android:textSize="16sp"
+                    android:textStyle="bold"
+                    android:textColor="#333333"
+                    android:layout_marginBottom="12dp" />
+
+                <!-- 检测信息显示框 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:background="@drawable/rounded_background"
+                    android:padding="12dp">
+
+                    <!-- 检测状态 -->
+                    <LinearLayout
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:layout_marginBottom="8dp">
+
+                        <TextView
+                            android:layout_width="0dp"
+                            android:layout_height="wrap_content"
+                            android:layout_weight="1"
+                            android:text="🎯 检测状态:"
+                            android:textSize="14sp"
+                            android:textColor="#666666" />
+
+                        <TextView
+                            android:id="@+id/tvDetectionStatus"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="等待检测数据..."
+                            android:textSize="14sp"
+                            android:textStyle="bold"
+                            android:textColor="#2196F3"
+                            android:background="@drawable/rounded_background"
+                            android:padding="6dp" />
+
+                    </LinearLayout>
+
+                    <!-- 偏差数据 -->
                     <LinearLayout
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
@@ -905,22 +972,22 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="水平偏差:"
+                            android:text="📊 偏差数据:"
                             android:textSize="14sp"
                             android:textColor="#666666" />
 
                         <TextView
-                            android:id="@+id/X_deviation"
+                            android:id="@+id/tvDetectionData"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="-- "
+                            android:text="未检测到目标"
                             android:textSize="14sp"
                             android:textStyle="bold"
-                            android:textColor="#FF9800"
+                            android:textColor="#4CAF50"
                             android:background="@drawable/rounded_background"
                             android:padding="6dp" />
-                    </LinearLayout>
 
+                    </LinearLayout>
 
 
                 </LinearLayout>
