@@ -599,9 +599,11 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }else if(text != null && text.contains("右手伸出来") ) {
                 order='g';
                 Toast.makeText(this, "伸右手", Toast.LENGTH_SHORT).show();
-            } else if (text != null && text.contains("帮我取快递") && camera != null && isPreviewStarted)  {
-                Toast.makeText(VoiceCallActivity.this, "正在打开导航", Toast.LENGTH_SHORT).show();
-                Intent intent = new Intent(VoiceCallActivity.this, WalkNaviActivity.class);
+            } else if (text != null && text.contains("帮我取快递") )  {
+
+
+                Toast.makeText(VoiceCallActivity.this, "正在打开远程导航页面", Toast.LENGTH_SHORT).show();
+                Intent intent = new Intent(VoiceCallActivity.this, ChatActivity.class);
                 startActivity(intent);
 
             }

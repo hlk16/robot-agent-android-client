@@ -94,8 +94,8 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private TextView tvDetectionStatus, tvDetectionData;
 
     // 真机测试配置 - 根据您的网络信息配置
-    private static final String SERVER_URL = "ws://192.168.0.102:8000/ws/chat/"; // 真机测试地址
-    private static final String WEBRTC_SERVER_URL = "ws://192.168.0.102:8000/ws/webrtc/"; // WebRTC专用端点
+    private static final String SERVER_URL = "ws://192.168.0.102:8009/ws/chat/"; // 真机测试地址
+    private static final String WEBRTC_SERVER_URL = "ws://192.168.0.102:8009/ws/webrtc/"; // WebRTC专用端点
     // 模拟器测试请使用: "ws://10.0.2.2:8000/ws/chat/"
     // 当前配置基于您的IPv4地址: 192.168.0.102
 
@@ -391,6 +391,26 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             startCameraDetectionService();
             
         }
+
+        // 检测其他命令
+        if (content != null && content.contains("前进")) {
+            VoiceCallActivity.order = 'a';
+            Toast.makeText(this, "收到前进指令", Toast.LENGTH_SHORT).show();
+        } else if (content != null && content.contains("后退")) {
+            VoiceCallActivity.order = 'b';
+            Toast.makeText(this, "收到后退指令", Toast.LENGTH_SHORT).show();
+        } else if (content != null && content.contains("左转")) {
+            VoiceCallActivity.order = 'c';
+            Toast.makeText(this, "收到左转指令", Toast.LENGTH_SHORT).show();
+        } else if (content != null && content.contains("右转")) {
+            VoiceCallActivity.order = 'd';
+            Toast.makeText(this, "收到右转指令", Toast.LENGTH_SHORT).show();
+        }else if (content != null && content.contains("停下来")){
+            VoiceCallActivity.order = 'e';
+             Toast.makeText(this, "收到停止指令", Toast.LENGTH_SHORT).show();
+        }
+
+
 
         addMessage(fromNickname + "(" + fromUserId + ")", content, timestamp);
     }
@@ -1228,7 +1248,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             } else {
                 // 导航结束或无效数据，停止更新
                 String reason = isNavigating ? "距离无效(" + distanceToDestination + ")" : "导航未启动";
-                etMessage.setText("位置未到可导航点请重新启动导航");
+                etMessage.setText("位置未到可导航点，请遥控到可导航区域重启导航");
                 sendChatMessage();
                 Log.d(TAG, "停止更新导航信息 - 原因: " + reason);
                 stopNavigationUpdates();
