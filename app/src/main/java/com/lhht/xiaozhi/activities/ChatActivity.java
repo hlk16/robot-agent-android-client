@@ -53,7 +53,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private static final String TAG = "ChatActivity";
     private static final int PERMISSION_REQUEST_CODE = 1001;
     
-    private EditText etUserId, etNickname, etTargetUser, etMessage, etRoomId;
+    private EditText etUserId, etNickname, etTargetUser, etMessage, etRoomId, etServerUrl, etWebrtcServerUrl;
     private TextView tvStatus, tvOnlineUsers, tvMessages;
     private Button btnConnect, btnSend, btnGetUsers, btnPing, btnClear;
     private Button btnForward, btnBackward, btnLeft, btnRight, btnStop;
@@ -181,6 +181,10 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         // 检测信息显示UI元素
         tvDetectionStatus = findViewById(R.id.tvDetectionStatus);
         tvDetectionData = findViewById(R.id.tvDetectionData);
+        
+        // 服务器地址配置输入框
+        etServerUrl = findViewById(R.id.etServerUrl);
+        etWebrtcServerUrl = findViewById(R.id.etWebrtcServerUrl);
     }
 
     private void initWebSocket() {
@@ -242,14 +246,22 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private void connect() {
         String userId = etUserId.getText().toString().trim();
         String nickname = etNickname.getText().toString().trim();
+        String serverUrl = etServerUrl.getText().toString().trim();
 
         if (TextUtils.isEmpty(userId) || TextUtils.isEmpty(nickname)) {
              Toast.makeText(this, "请输入用户ID和昵称", Toast.LENGTH_SHORT).show();
             return;
         }
+        
+        // 如果用户没有输入服务器地址，使用默认地址
+        if (TextUtils.isEmpty(serverUrl)) {
+            serverUrl = SERVER_URL;
+        } else if (!serverUrl.endsWith("/")) {
+            serverUrl += "/";
+        }
 
         try {
-            String url = SERVER_URL + userId + "?nickname=" + nickname;
+            String url = serverUrl + userId + "?nickname=" + nickname;
             addMessage("系统", "正在连接到: " + url, getCurrentTime());
             Request request = new Request.Builder().url(url).build();
 
@@ -408,6 +420,18 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         }else if (content != null && content.contains("停下来")){
             VoiceCallActivity.order = 'e';
              Toast.makeText(this, "收到停止指令", Toast.LENGTH_SHORT).show();
+        }else if (tvCurrentDirection.getText().toString().equals("当前方向：前进") && content != null){
+            VoiceCallActivity.order = 'f';
+            Toast.makeText(this, "收到持续前进指令", Toast.LENGTH_SHORT).show();
+        }else if (tvCurrentDirection.getText().toString().equals("当前方向：左转") && content != null){
+            VoiceCallActivity.order = 'c';
+            Toast.makeText(this, "收到左转指令", Toast.LENGTH_SHORT).show();
+        }else if (tvCurrentDirection.getText().toString().equals("当前方向：右转") && content != null){
+            VoiceCallActivity.order = 'd';
+            Toast.makeText(this, "收到右转指令", Toast.LENGTH_SHORT).show();
+        }else if (tvCurrentDirection.getText().toString().equals("当前方向：后退") && content != null){
+            VoiceCallActivity.order = 'g';
+            Toast.makeText(this, "收到持续后退指令", Toast.LENGTH_SHORT).show();
         }
 
 
@@ -660,12 +684,20 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 roomId = "test_room"; // 默认房间号
             }
             
+            String webrtcServerUrl = etWebrtcServerUrl.getText().toString().trim();
+            // 如果用户没有输入WebRTC服务器地址，使用默认地址
+            if (TextUtils.isEmpty(webrtcServerUrl)) {
+                webrtcServerUrl = WEBRTC_SERVER_URL;
+            } else if (!webrtcServerUrl.endsWith("/")) {
+                webrtcServerUrl += "/";
+            }
+            
             // 构建包含客户端ID和nickname的WebRTC端点URL
             String nickname = etNickname.getText().toString().trim();
             if (nickname.isEmpty()) {
                 nickname = "Android客户端";
             }
-            String webrtcUrl = WEBRTC_SERVER_URL + clientId + "?nickname=" + nickname;
+            String webrtcUrl = webrtcServerUrl + clientId + "?nickname=" + nickname;
             signalingClient = new SignalingClient(new URI(webrtcUrl), this);
             signalingClient.connect();
         } catch (Exception e) {
