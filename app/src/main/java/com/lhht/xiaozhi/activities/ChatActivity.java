@@ -93,6 +93,11 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private Handler detectionUpdateHandler;
     private Runnable detectionUpdateRunnable;
     private TextView tvDetectionStatus, tvDetectionData;
+    
+    // POI目的地坐标信息
+    private double destinationLat = 0.0;
+    private double destinationLng = 0.0;
+    private boolean hasDestinationCoordinates = false;
 
     // 真机测试配置 - 根据您的网络信息配置
     private static final String SERVER_URL = "ws://192.168.0.102:8009/ws/chat/"; // 真机测试地址
@@ -135,6 +140,9 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             navigationServiceManager.startAndBindService();
             Log.d(TAG, "预启动导航服务");
         }
+        
+        // 处理从SearchNaviActivity传递过来的POI信息
+        handlePoiFromSearch();
     }
 
     private void initViews() {
@@ -221,7 +229,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         btnLeft.setOnClickListener(v -> sendQuickCommand("左转"));
         btnRight.setOnClickListener(v -> sendQuickCommand("右转"));
         btnStop.setOnClickListener(v -> sendQuickCommand("停止"));
-        btnNavigation.setOnClickListener(v -> sendQuickCommand("自动导航")); // 自动导航按钮点击事件
+        btnNavigation.setOnClickListener(v -> sendNavigationCommand()); // 自动导航按钮点击事件
         
         // WebRTC相关按钮点击事件
         btnJoinRoom.setOnClickListener(v -> {
@@ -535,6 +543,55 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             webSocket.send(message.toString());
         } catch (JSONException e) {
              Toast.makeText(this, "发送控制指令失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+        }
+    }
+    
+    /**
+     * 发送自动导航指令，如果有目的地坐标信息则一起发送
+     */
+    private void sendNavigationCommand() {
+        if (!isConnected || webSocket == null) {
+             Toast.makeText(this, "请先连接服务器", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            String targetUser = etTargetUser.getText().toString().trim();
+            
+            JSONObject message = new JSONObject();
+            message.put("type", "chat");
+            
+            String commandContent = "[控制指令] 自动导航";
+            
+            // 如果有目的地坐标信息，添加到消息中
+            if (hasDestinationCoordinates) {
+                commandContent += " 目的地坐标: " + destinationLat + "," + destinationLng;
+                message.put("destination_lat", destinationLat);
+                message.put("destination_lng", destinationLng);
+                Log.d(TAG, "发送自动导航指令，包含目的地坐标: (" + destinationLat + ", " + destinationLng + ")");
+            } else {
+                Log.d(TAG, "发送自动导航指令，无目的地坐标信息");
+            }
+            
+            message.put("content", commandContent);
+            
+            // 添加控制指令标识
+            message.put("command", "自动导航");
+            message.put("is_control", true);
+            
+            // 与文本消息使用相同的发送逻辑
+            if (!TextUtils.isEmpty(targetUser)) {
+                message.put("target_user_id", targetUser);
+                addMessage("我[控制]", "发送给 " + targetUser + ": 自动导航" + 
+                    (hasDestinationCoordinates ? " (" + destinationLat + "," + destinationLng + ")" : ""), getCurrentTime());
+            } else {
+                addMessage("我[控制]", "自动导航" + 
+                    (hasDestinationCoordinates ? " (" + destinationLat + "," + destinationLng + ")" : ""), getCurrentTime());
+            }
+
+            webSocket.send(message.toString());
+        } catch (JSONException e) {
+             Toast.makeText(this, "发送导航指令失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -1448,5 +1505,88 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                       ", Y偏差: " + dataManager.getDeltaY());
             }
         }
+    }
+    
+    /**
+     * 处理从SearchNaviActivity传递过来的POI信息
+     */
+    private void handlePoiFromSearch() {
+        Intent intent = getIntent();
+        if (intent != null && intent.getBooleanExtra("from_search", false)) {
+            // 获取POI信息
+            String poiName = intent.getStringExtra("poi_name");
+            String poiAddress = intent.getStringExtra("poi_address");
+            double poiLat = intent.getDoubleExtra("poi_lat", 0.0);
+            double poiLng = intent.getDoubleExtra("poi_lng", 0.0);
+            String poiCategory = intent.getStringExtra("poi_category");
+            String poiType = intent.getStringExtra("poi_type");
+            String poiTel = intent.getStringExtra("poi_tel");
+            String poiProvince = intent.getStringExtra("poi_province");
+            String poiCity = intent.getStringExtra("poi_city");
+            String poiDistrict = intent.getStringExtra("poi_district");
+            
+            // 获取当前位置信息
+            double currentLat = intent.getDoubleExtra("current_lat", 0.0);
+            double currentLng = intent.getDoubleExtra("current_lng", 0.0);
+            
+            Log.d(TAG, "接收到POI信息: " + poiName + " (" + poiLat + ", " + poiLng + ")");
+             
+             // 保存目的地坐标信息
+             if (poiLat != 0.0 && poiLng != 0.0) {
+                 destinationLat = poiLat;
+                 destinationLng = poiLng;
+                 hasDestinationCoordinates = true;
+                 Log.d(TAG, "已保存目的地坐标: (" + destinationLat + ", " + destinationLng + ")");
+             }
+             
+             // 构建POI信息消息
+            StringBuilder poiMessage = new StringBuilder();
+            poiMessage.append("已选择目的地:\n");
+            poiMessage.append("名称: ").append(poiName != null ? poiName : "未知").append("\n");
+            poiMessage.append("地址: ").append(poiAddress != null ? poiAddress : "未知").append("\n");
+            poiMessage.append("坐标: ").append(poiLat).append(", ").append(poiLng).append("\n");
+            
+            if (poiCategory != null && !poiCategory.isEmpty()) {
+                poiMessage.append("类别: ").append(poiCategory).append("\n");
+            }
+            if (poiType != null && !poiType.isEmpty()) {
+                poiMessage.append("类型: ").append(poiType).append("\n");
+            }
+            if (poiTel != null && !poiTel.isEmpty()) {
+                poiMessage.append("电话: ").append(poiTel).append("\n");
+            }
+            if (poiProvince != null && !poiProvince.isEmpty()) {
+                poiMessage.append("省份: ").append(poiProvince).append("\n");
+            }
+            if (poiCity != null && !poiCity.isEmpty()) {
+                poiMessage.append("城市: ").append(poiCity).append("\n");
+            }
+            if (poiDistrict != null && !poiDistrict.isEmpty()) {
+                poiMessage.append("区域: ").append(poiDistrict).append("\n");
+            }
+            
+            if (currentLat != 0.0 && currentLng != 0.0) {
+                poiMessage.append("当前位置: ").append(currentLat).append(", ").append(currentLng);
+            }
+            
+            // 在消息框中显示POI信息
+             if (tvMessages != null) {
+                 String currentMessages = tvMessages.getText().toString();
+                 String newMessage = "[系统] " + poiMessage.toString() + "\n\n" + currentMessages;
+                 tvMessages.setText(newMessage);
+             }
+             
+             // 显示提示信息
+             Toast.makeText(this, "已接收目的地信息: " + (poiName != null ? poiName : "未知位置"), Toast.LENGTH_LONG).show();
+        }
+    }
+    
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        // 更新Intent，以便handlePoiFromSearch能够获取到新的数据
+        setIntent(intent);
+        // 处理从SearchNaviActivity传递过来的POI信息
+        handlePoiFromSearch();
     }
 }

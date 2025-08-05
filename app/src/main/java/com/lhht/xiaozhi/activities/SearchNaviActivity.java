@@ -520,10 +520,11 @@ public class SearchNaviActivity extends AppCompatActivity implements TencentMap.
             return;
         }
 
-        // 启动步行导航Activity
-        Intent intent = new Intent(this, WalkNaviActivity.class);
+        // 跳转到ChatActivity - 使用FLAG_ACTIVITY_CLEAR_TOP返回到现有实例
+        Intent intent = new Intent(this, ChatActivity.class);
+        intent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP);
 
-        // 传递目的地信息
+        // 传递目的地POI信息
         Integer index = (Integer) selectedMarker.getTag();
         if (index != null && index < searchResults.size()) {
             Map<String, Object> destData = searchResults.get(index);
@@ -531,21 +532,39 @@ public class SearchNaviActivity extends AppCompatActivity implements TencentMap.
             String address = (String) destData.get("address");
             double lat = (Double) destData.get("lat");
             double lng = (Double) destData.get("lng");
+            String category = (String) destData.get("category");
+            String type = (String) destData.get("type");
+            String tel = (String) destData.get("tel");
+            String province = (String) destData.get("province");
+            String city = (String) destData.get("city");
+            String district = (String) destData.get("district");
 
-            intent.putExtra("dest_name", title);
-            intent.putExtra("dest_lat", lat);
-            intent.putExtra("dest_lng", lng);
-            intent.putExtra("dest_address", address);
+            // 传递完整的POI信息到ChatActivity
+            intent.putExtra("poi_name", title);
+            intent.putExtra("poi_address", address);
+            intent.putExtra("poi_lat", lat);
+            intent.putExtra("poi_lng", lng);
+            intent.putExtra("poi_category", category);
+            intent.putExtra("poi_type", type);
+            intent.putExtra("poi_tel", tel);
+            intent.putExtra("poi_province", province);
+            intent.putExtra("poi_city", city);
+            intent.putExtra("poi_district", district);
+            
+            // 标记这是从搜索页面跳转过来的
+            intent.putExtra("from_search", true);
         }
 
         // 如果有当前位置，也传递过去
         if (currentLocation != null) {
-            intent.putExtra("start_lat", currentLocation.getLatitude());
-            intent.putExtra("start_lng", currentLocation.getLongitude());
-            intent.putExtra("start_name", "当前位置");
+            intent.putExtra("current_lat", currentLocation.getLatitude());
+            intent.putExtra("current_lng", currentLocation.getLongitude());
         }
 
         startActivity(intent);
+        
+        // 显示跳转提示
+        Toast.makeText(this, "已选择目的地，跳转到聊天页面", Toast.LENGTH_SHORT).show();
     }
 
     @Override
