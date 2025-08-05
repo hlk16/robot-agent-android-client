@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/main"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    tools:context=".activities.SearchNaviActivity">
+
+    <!-- 搜索控制面板 -->
+    <LinearLayout
+        android:id="@+id/search_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:background="#F5F5F5"
+        android:elevation="4dp">
+
+        <!-- 搜索方式选择 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="搜索方式："
+                android:textSize="14sp"
+                android:textColor="#333333" />
+
+            <Spinner
+                android:id="@+id/sp_search_method"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp" />
+
+        </LinearLayout>
+
+        <!-- 城市输入框 -->
+        <LinearLayout
+            android:id="@+id/ll_city_input"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="城市："
+                android:textSize="14sp"
+                android:textColor="#333333" />
+
+            <EditText
+                android:id="@+id/et_city"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:hint="请输入城市名称"
+                android:textSize="14sp"
+                android:padding="12dp"
+                android:background="@drawable/bg_message" />
+
+        </LinearLayout>
+
+        <!-- 搜索关键词输入框 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="关键词："
+                android:textSize="14sp"
+                android:textColor="#333333" />
+
+            <EditText
+                android:id="@+id/et_search_keyword"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:hint="请输入搜索关键词"
+                android:textSize="14sp"
+                android:padding="12dp"
+                android:background="@drawable/bg_message" />
+
+        </LinearLayout>
+
+        <!-- 操作按钮 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <Button
+                android:id="@+id/btn_search_poi"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="搜索地点"
+                android:textSize="14sp"
+                android:background="@drawable/bg_nav_button_primary"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/btn_clear_search"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:text="清除数据"
+                android:textSize="14sp"
+                android:background="@drawable/bg_nav_button_primary"
+                android:textColor="#666666" />
+
+        </LinearLayout>
+
+        <!-- 搜索结果描述 -->
+        <TextView
+            android:id="@+id/tv_search_result_desc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="请输入搜索条件"
+            android:textSize="12sp"
+            android:textColor="#666666"
+            android:gravity="center" />
+
+    </LinearLayout>
+
+    <!-- 地图容器 -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1">
+
+        <!-- 腾讯地图视图 -->
+        <com.tencent.tencentmap.mapsdk.maps.MapView
+            android:id="@+id/map_view"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
+        <!-- 导航控制按钮 -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom|end"
+            android:layout_margin="16dp"
+            android:orientation="vertical">
+
+            <Button
+                android:id="@+id/btn_start_navigation"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:layout_marginBottom="8dp"
+                android:text="开始导航"
+                android:textSize="14sp"
+                android:paddingHorizontal="16dp"
+                android:background="@drawable/bg_nav_button_primary"
+                android:textColor="#FFFFFF"
+                android:visibility="gone" />
+
+            <Button
+                android:id="@+id/btn_use_current_location"
+                android:layout_width="wrap_content"
+                android:layout_height="48dp"
+                android:text="当前位置"
+                android:textSize="14sp"
+                android:paddingHorizontal="16dp"
+                android:background="@drawable/bg_nav_button_primary"
+                android:textColor="#666666" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
+</LinearLayout>

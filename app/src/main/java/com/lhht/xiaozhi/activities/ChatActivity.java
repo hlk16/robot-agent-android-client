@@ -58,6 +58,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private Button btnConnect, btnSend, btnGetUsers, btnPing, btnClear;
     private Button btnForward, btnBackward, btnLeft, btnRight, btnStop;
     private Button btnNavigation; // 自动导航按钮
+    private Button btnsearch; // 搜索按钮
     private Button btnJoinRoom, btnCameraToggle, btnCall, btnEndCall;
     private SurfaceViewRenderer surfaceViewRemote, surfaceViewLocal;
     private LinearLayout layoutNoRemoteSignal, layoutNoLocalSignal;
@@ -185,6 +186,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         // 服务器地址配置输入框
         etServerUrl = findViewById(R.id.etServerUrl);
         etWebrtcServerUrl = findViewById(R.id.etWebrtcServerUrl);
+        btnsearch = findViewById(R.id.search_button);
     }
 
     private void initWebSocket() {
@@ -208,6 +210,10 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         btnGetUsers.setOnClickListener(v -> getOnlineUsers());
         btnPing.setOnClickListener(v -> sendPing());
         btnClear.setOnClickListener(v -> clearMessages());
+        btnsearch.setOnClickListener(view -> {
+            Intent intent = new Intent(ChatActivity.this, SearchNaviActivity.class);
+            startActivity(intent);
+        });
         
         // 快捷控制按钮点击事件
         btnForward.setOnClickListener(v -> sendQuickCommand("前进"));

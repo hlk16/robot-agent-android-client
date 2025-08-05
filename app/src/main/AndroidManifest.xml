@@ -23,12 +23,9 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" /> <!-- 添加相机权限 -->
     <uses-permission android:name="android.permission.CAMERA" /> <!-- 高采样率传感器权限，导航SDK需要 -->
     <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" /> <!-- 前台服务权限 -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <!-- 前台位置服务权限 -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <!-- 前台相机服务权限 -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
-    <!-- 后台位置权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" /> <!-- 前台位置服务权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" /> <!-- 前台相机服务权限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" /> <!-- 后台位置权限 -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <uses-feature android:name="android.hardware.camera" />
@@ -42,6 +39,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.XiaoZhi"
         android:usesCleartextTraffic="true">
+        <activity
+            android:name=".activities.SearchNaviActivity"
+            android:exported="false" />
         <activity
             android:name=".activities.video"
             android:exported="false" />
@@ -94,16 +94,12 @@
             android:configChanges="orientation|screenSize"
             android:exported="false"
             android:screenOrientation="landscape"
-            android:theme="@style/Theme.XiaoZhi.VoiceCall" />
-        
-        <!-- 导航后台服务 -->
+            android:theme="@style/Theme.XiaoZhi.VoiceCall" /> <!-- 导航后台服务 -->
         <service
             android:name=".services.NavigationBackgroundService"
             android:enabled="true"
             android:exported="false"
-            android:foregroundServiceType="location" />
-            
-        <!-- OpenCV图像检测服务 -->
+            android:foregroundServiceType="location" /> <!-- OpenCV图像检测服务 -->
         <service
             android:name=".services.CameraDetectionService"
             android:enabled="true"

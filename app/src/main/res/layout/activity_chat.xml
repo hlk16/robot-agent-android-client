@@ -535,6 +535,12 @@
                 </com.google.android.material.textfield.TextInputLayout>
 
                 <Button
+                    android:id="@+id/search_button"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="选择目的地" />
+
+                <Button
                     android:id="@+id/NavButten"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
