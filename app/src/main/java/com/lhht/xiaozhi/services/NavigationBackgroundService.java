@@ -236,6 +236,27 @@ public class NavigationBackgroundService extends Service {
     }
     
     /**
+     * 启动导航到指定坐标
+     */
+    public void startNavigationToCoordinates(double latitude, double longitude, String destinationName) {
+        Log.d(TAG, "准备启动导航到坐标: " + latitude + ", " + longitude + " (" + destinationName + ")");
+        
+        // 创建目的地POI
+        NaviPoi destPoi = new NaviPoi(latitude, longitude);
+        destPoi.setPoiName(destinationName != null ? destinationName : "目的地");
+        
+        // 如果当前位置未知，先获取位置
+        if (currentLocation == null) {
+            Log.d(TAG, "当前位置未知，开始获取位置");
+            updateNotification("正在获取当前位置...");
+            startLocationForNavigation(destPoi);
+        } else {
+            // 直接使用当前位置启动导航
+            startNavigationWithLocation(currentLocation, destPoi);
+        }
+    }
+    
+    /**
      * 为导航获取当前位置
      */
     private void startLocationForNavigation(NaviPoi destPoi) {

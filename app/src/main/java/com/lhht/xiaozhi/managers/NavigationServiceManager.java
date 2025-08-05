@@ -132,6 +132,20 @@ public class NavigationServiceManager {
     }
     
     /**
+     * 启动导航到指定坐标
+     */
+    public boolean startNavigationToCoordinates(double latitude, double longitude, String destinationName) {
+        if (!isServiceConnected()) {
+            Log.w(TAG, "服务未连接，无法启动导航");
+            return false;
+        }
+        
+        navigationService.startNavigationToCoordinates(latitude, longitude, destinationName);
+        Log.d(TAG, "启动导航到坐标: " + latitude + ", " + longitude + " (" + destinationName + ")");
+        return true;
+    }
+    
+    /**
      * 停止导航
      */
     public boolean stopNavigation() {

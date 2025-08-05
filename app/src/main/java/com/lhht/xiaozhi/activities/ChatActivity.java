@@ -406,16 +406,29 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         // 检测导航命令
         if (content != null && (content.contains("自动导航") || content.contains("自动导航") ||
             content.contains("[控制指令] 自动导航") || content.contains("[控制指令] 自动导航"))) {
-            // 显示Toast提示
-            Toast.makeText(this, "收到导航指令：开始导航", Toast.LENGTH_SHORT).show();
-            Log.d(TAG, "检测到导航命令: " + content);
             
-            // 启动导航服务并导航到驿站
-            startNavigationToYizhan();
+            // 检查是否包含坐标信息
+            double destinationLat = json.optDouble("destination_lat", 0.0);
+            double destinationLng = json.optDouble("destination_lng", 0.0);
+            
+            if (destinationLat != 0.0 && destinationLng != 0.0) {
+                // 使用接收到的坐标信息启动导航
+                Toast.makeText(this, "收到导航指令：开始导航到指定坐标", Toast.LENGTH_SHORT).show();
+                Log.d(TAG, "检测到带坐标的导航命令: " + content + ", 坐标: " + destinationLat + ", " + destinationLng);
+                
+                // 启动导航服务并导航到指定坐标
+                 startNavigationToCoordinatesWithService(destinationLat, destinationLng, "目的地");
+            } else {
+                // 使用默认目的地启动导航
+                Toast.makeText(this, "收到导航指令：开始导航", Toast.LENGTH_SHORT).show();
+                Log.d(TAG, "检测到导航命令: " + content);
+                
+                // 启动导航服务并导航到驿站
+                startNavigationToYizhan();
+            }
             
             // 启动OpenCV图像检测服务
             startCameraDetectionService();
-            
         }
 
         // 检测其他命令
@@ -544,9 +557,65 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         } catch (JSONException e) {
              Toast.makeText(this, "发送控制指令失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
         }
-    }
-    
-    /**
+     }
+     
+     /**
+      * 启动导航服务并导航到指定坐标
+      */
+     private void startNavigationToCoordinatesWithService(double latitude, double longitude, String destinationName) {
+         Log.d(TAG, "准备启动导航服务并导航到坐标: " + latitude + ", " + longitude);
+         
+         // 检查定位权限
+         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                 != PackageManager.PERMISSION_GRANTED) {
+             Log.w(TAG, "缺少定位权限");
+             Toast.makeText(this, "需要定位权限才能启动导航", Toast.LENGTH_LONG).show();
+             
+             // 发送权限缺失消息到聊天
+             etMessage.setText("导航启动失败：缺少定位权限，请在设置中授予定位权限后重试");
+             sendChatMessage();
+             etMessage.setText("");
+             
+             ActivityCompat.requestPermissions(this,
+                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+                                Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+                     PERMISSION_REQUEST_CODE);
+             return;
+         }
+         
+         // 启动并绑定导航服务
+         if (!navigationServiceManager.isServiceConnected()) {
+             // 设置待启动标志和坐标信息，等待服务连接回调
+             pendingNavigationStart = true;
+             destinationLat = latitude;
+             destinationLng = longitude;
+             hasDestinationCoordinates = true;
+             navigationServiceManager.startAndBindService();
+             Toast.makeText(this, "正在启动导航服务...", Toast.LENGTH_SHORT).show();
+             Log.d(TAG, "导航服务未连接，正在启动服务并设置待启动标志");
+             
+             // 设置超时检查，如果5秒后服务仍未连接，则提示失败
+             mainHandler.postDelayed(() -> {
+                 if (pendingNavigationStart && !navigationServiceManager.isServiceConnected()) {
+                     pendingNavigationStart = false;
+                     hasDestinationCoordinates = false;
+                     Toast.makeText(this, "导航服务启动超时，请重试", Toast.LENGTH_LONG).show();
+                     
+                     // 发送服务启动超时消息到聊天
+                     etMessage.setText("导航服务启动超时，请检查网络连接后重试");
+                     sendChatMessage();
+                     etMessage.setText("");
+                     
+                     Log.w(TAG, "导航服务启动超时");
+                 }
+             }, 5000);
+         } else {
+             // 服务已连接，直接启动导航
+             startNavigationToCoordinates(latitude, longitude, destinationName);
+         }
+     }
+     
+     /**
      * 发送自动导航指令，如果有目的地坐标信息则一起发送
      */
     private void sendNavigationCommand() {
@@ -1173,7 +1242,17 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                     // 如果有待启动的导航，现在启动
                     if (pendingNavigationStart) {
                         pendingNavigationStart = false;
-                        startNavigationToDestination();
+                        
+                        // 根据是否有坐标信息选择启动方式
+                        if (hasDestinationCoordinates) {
+                            startNavigationToCoordinates(destinationLat, destinationLng, "目的地");
+                            // 重置坐标信息
+                            hasDestinationCoordinates = false;
+                            destinationLat = 0.0;
+                            destinationLng = 0.0;
+                        } else {
+                            startNavigationToDestination();
+                        }
                     }
                 });
             }
@@ -1275,19 +1354,50 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 startNavigationUpdates();
                 Log.d(TAG, "延迟启动导航信息更新");
             }, 3000); // 延迟3秒
-            
-            Log.d(TAG, "导航已启动到驿站");
         } else {
-            Toast.makeText(this, "启动导航失败，请检查服务状态", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "导航启动失败", Toast.LENGTH_SHORT).show();
             
             // 发送导航启动失败消息到聊天
-            etMessage.setText("导航启动失败，请检查GPS设置和网络连接");
+            etMessage.setText("导航启动失败，请检查导航服务状态");
             sendChatMessage();
             etMessage.setText("");
             
-            Log.w(TAG, "启动导航失败");
+            Log.e(TAG, "导航启动失败");
         }
     }
+    
+    /**
+     * 启动导航到指定坐标
+     */
+    private void startNavigationToCoordinates(double latitude, double longitude, String destinationName) {
+        Log.d(TAG, "准备启动导航到坐标: " + latitude + ", " + longitude + ", 服务连接状态: " + navigationServiceManager.isServiceConnected());
+        
+        if (navigationServiceManager.startNavigationToCoordinates(latitude, longitude, destinationName)) {
+            Toast.makeText(this, "开始导航到" + destinationName, Toast.LENGTH_SHORT).show();
+            
+            // 发送导航启动成功消息到聊天
+            etMessage.setText("导航启动成功，正在前往" + destinationName + "(" + latitude + ", " + longitude + ")");
+            sendChatMessage();
+            etMessage.setText("");
+            
+            // 延迟启动更新，给导航服务一些时间初始化
+             mainHandler.postDelayed(() -> {
+                 startNavigationUpdates();
+                 Log.d(TAG, "延迟启动导航信息更新");
+             }, 3000); // 延迟3秒
+             
+             Log.d(TAG, "导航已启动到坐标: " + latitude + ", " + longitude);
+         } else {
+             Toast.makeText(this, "导航启动失败", Toast.LENGTH_SHORT).show();
+             
+             // 发送导航启动失败消息到聊天
+             etMessage.setText("导航启动失败，请检查导航服务状态");
+             sendChatMessage();
+             etMessage.setText("");
+             
+             Log.e(TAG, "导航启动失败");
+         }
+     }
     
     /**
      * 开始更新导航信息
