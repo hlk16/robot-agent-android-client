@@ -904,9 +904,6 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         }
         
         // 显示无信号提示
-        if (layoutNoLocalSignal != null) {
-            layoutNoLocalSignal.setVisibility(View.VISIBLE);
-        }
         if (layoutNoRemoteSignal != null) {
             layoutNoRemoteSignal.setVisibility(View.VISIBLE);
         }
@@ -916,8 +913,13 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         
         isInCall = false;
         remoteClientId = null;
-        isCameraEnabled = false; // 重置摄像头状态
+        // 移除摄像头状态重置，保持用户设置的摄像头状态
         updateWebRTCButtonStates();
+        
+        // 根据用户设置的摄像头状态显示或隐藏本地无信号提示
+        if (layoutNoLocalSignal != null) {
+            layoutNoLocalSignal.setVisibility(isCameraEnabled ? View.GONE : View.VISIBLE);
+        }
         
         // Toast.makeText(this, "通话已结束", Toast.LENGTH_SHORT).show();
     }
@@ -1169,15 +1171,18 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             runOnUiThread(() -> {
                 Log.d(TAG, "本地媒体流创建成功");
                 
-                // 默认禁用摄像头
+                // 根据用户当前设置的摄像头状态来控制摄像头
                 if (webRTCManager != null) {
-                    webRTCManager.disableCamera();
-                    isCameraEnabled = false;
+                    if (isCameraEnabled) {
+                        webRTCManager.enableCamera();
+                    } else {
+                        webRTCManager.disableCamera();
+                    }
                 }
                 
-                // 显示本地无信号提示，隐藏本地视频（因为摄像头默认关闭）
+                // 根据摄像头状态显示或隐藏本地无信号提示
                 if (layoutNoLocalSignal != null) {
-                    layoutNoLocalSignal.setVisibility(View.VISIBLE);
+                    layoutNoLocalSignal.setVisibility(isCameraEnabled ? View.GONE : View.VISIBLE);
                 }
                 if (surfaceViewLocal != null) {
                     surfaceViewLocal.setVisibility(View.VISIBLE);
@@ -1186,7 +1191,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 // 更新按钮状态
                 updateWebRTCButtonStates();
                 
-                // Toast.makeText(ChatActivity.this, "本地视频已准备就绪（摄像头默认关闭）", Toast.LENGTH_SHORT).show();
+                // Toast.makeText(ChatActivity.this, "本地视频已准备就绪", Toast.LENGTH_SHORT).show();
             });
         }
 
