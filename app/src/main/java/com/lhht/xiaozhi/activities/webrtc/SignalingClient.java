@@ -124,4 +124,18 @@ public class SignalingClient extends WebSocketClient {
             Log.e("SignalingClient", "构建结束通话消息失败", e);
         }
     }
+    
+    // 发送广播offer消息（不指定targetId）
+    public void sendBroadcastOffer(String sdp) {
+        try {
+            JSONObject message = new JSONObject();
+            message.put("type", "offer");
+            message.put("sdp", sdp);
+            // 不添加targetId字段，让服务器广播给房间内所有其他客户端
+            send(message.toString());
+            Log.d("SignalingClient", "发送广播offer消息到房间内所有其他客户端");
+        } catch (JSONException e) {
+            Log.e("SignalingClient", "构建广播offer消息失败", e);
+        }
+    }
 }

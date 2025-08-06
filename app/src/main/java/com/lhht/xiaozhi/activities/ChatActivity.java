@@ -936,6 +936,23 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                          Toast.makeText(this, "用户 " + joinedClientId + " 加入房间", Toast.LENGTH_SHORT).show();
                     }
                     break;
+                    
+                case "room_joined":
+                    // 处理加入房间后收到的现有用户列表
+                    if (jsonMessage.has("existingClients")) {
+                        try {
+                            org.json.JSONArray existingClients = jsonMessage.getJSONArray("existingClients");
+                            if (existingClients.length() > 0) {
+                                // 设置第一个现有客户端为远程客户端ID
+                                remoteClientId = existingClients.getString(0);
+                                Toast.makeText(this, "房间内已有用户: " + remoteClientId, Toast.LENGTH_SHORT).show();
+                                Log.d(TAG, "设置远程客户端ID: " + remoteClientId);
+                            }
+                        } catch (JSONException e) {
+                            Log.e(TAG, "解析现有客户端列表失败: " + e.getMessage());
+                        }
+                    }
+                    break;
 
                 case "offer":
                     handleOffer(jsonMessage);
@@ -1072,10 +1089,16 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
     // WebRTC监听器实现
     public void onLocalDescription(SessionDescription sdp) {
-        if (signalingClient != null && signalingClient.isOpen() && remoteClientId != null) {
+        if (signalingClient != null && signalingClient.isOpen()) {
             if (sdp.type == SessionDescription.Type.OFFER) {
-                signalingClient.sendOffer(sdp.description, remoteClientId);
-            } else if (sdp.type == SessionDescription.Type.ANSWER) {
+                if (remoteClientId != null) {
+                    // 如果有指定的远程客户端，直接发送给该客户端
+                    signalingClient.sendOffer(sdp.description, remoteClientId);
+                } else {
+                    // 如果没有指定远程客户端，广播给房间内所有其他客户端
+                    signalingClient.sendBroadcastOffer(sdp.description);
+                }
+            } else if (sdp.type == SessionDescription.Type.ANSWER && remoteClientId != null) {
                 signalingClient.sendAnswer(sdp.description, remoteClientId);
             }
         }
