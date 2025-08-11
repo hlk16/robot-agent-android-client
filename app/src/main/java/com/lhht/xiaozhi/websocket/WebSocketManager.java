@@ -14,6 +14,11 @@ import java.net.URI;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class WebSocketManager {
     private static final String TAG = "WebSocketManager";
@@ -26,6 +31,61 @@ public class WebSocketManager {
     private boolean enableToken;
     private boolean isReconnecting = false;
     private static final int RECONNECT_DELAY = 3000; // 3秒后重连
+    
+    // 消息队列机制
+    private BlockingQueue<QueuedMessage> messageQueue;
+    private ExecutorService messageExecutor;
+    private AtomicBoolean isProcessingQueue = new AtomicBoolean(false);
+    private static final int MAX_QUEUE_SIZE = 100;
+    private static final long MESSAGE_THROTTLE_MS = 50; // 消息发送间隔
+    
+    // 消息队列项
+    private static class QueuedMessage {
+        final String textMessage;
+        final byte[] binaryMessage;
+        final long timestamp;
+        final boolean isBinary;
+        
+        QueuedMessage(String textMessage) {
+            this.textMessage = textMessage;
+            this.binaryMessage = null;
+            this.isBinary = false;
+            this.timestamp = System.currentTimeMillis();
+        }
+        
+        QueuedMessage(byte[] binaryMessage) {
+             this.textMessage = null;
+             this.binaryMessage = binaryMessage;
+             this.isBinary = true;
+             this.timestamp = System.currentTimeMillis();
+         }
+     }
+     
+     // 优先级消息发送（用于重要消息如图像识别结果）
+     public void sendPriorityMessage(String message) {
+         if (client != null && client.isOpen()) {
+             try {
+                 QueuedMessage queuedMessage = new QueuedMessage(message);
+                 // 清空当前队列中的普通消息，优先发送重要消息
+                 messageQueue.clear();
+                 messageQueue.offer(queuedMessage);
+                 Log.d(TAG, "Priority message queued, cleared previous messages");
+             } catch (Exception e) {
+                 Log.e(TAG, "Error queuing priority message", e);
+                 // 降级到直接发送
+                 client.send(message);
+             }
+         }
+     }
+     
+     // 获取队列状态信息
+     public int getQueueSize() {
+         return messageQueue != null ? messageQueue.size() : 0;
+     }
+     
+     public boolean isQueueFull() {
+         return messageQueue != null && messageQueue.remainingCapacity() == 0;
+     }
 
     public interface WebSocketListener {
         void onConnected();
@@ -37,6 +97,44 @@ public class WebSocketManager {
 
     public WebSocketManager(String deviceId) {
         this.deviceId = deviceId;
+        this.messageQueue = new LinkedBlockingQueue<>(MAX_QUEUE_SIZE);
+        this.messageExecutor = Executors.newSingleThreadExecutor();
+        startMessageProcessor();
+    }
+    
+    // 启动消息处理器
+    private void startMessageProcessor() {
+        if (isProcessingQueue.compareAndSet(false, true)) {
+            messageExecutor.submit(() -> {
+                while (isProcessingQueue.get()) {
+                    try {
+                        QueuedMessage message = messageQueue.take();
+                        if (client != null && client.isOpen()) {
+                            if (message.isBinary) {
+                                client.send(message.binaryMessage);
+                            } else {
+                                client.send(message.textMessage);
+                            }
+                            // 控制发送频率
+                            Thread.sleep(MESSAGE_THROTTLE_MS);
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error processing message queue", e);
+                    }
+                }
+            });
+        }
+    }
+    
+    // 停止消息处理器
+    private void stopMessageProcessor() {
+        isProcessingQueue.set(false);
+        if (messageExecutor != null && !messageExecutor.isShutdown()) {
+            messageExecutor.shutdownNow();
+        }
     }
 
     public void setListener(WebSocketListener listener) {
@@ -202,6 +300,14 @@ public class WebSocketManager {
     }
 
     public void disconnect() {
+        // 停止消息处理器
+        stopMessageProcessor();
+        
+        // 清空消息队列
+        if (messageQueue != null) {
+            messageQueue.clear();
+        }
+        
         if (client != null && client.isOpen()) {
             client.close();
         }
@@ -213,13 +319,45 @@ public class WebSocketManager {
 
     public void sendMessage(String message) {
         if (client != null && client.isOpen()) {
-            client.send(message);
+            try {
+                QueuedMessage queuedMessage = new QueuedMessage(message);
+                if (!messageQueue.offer(queuedMessage)) {
+                    // 队列满了，移除最旧的消息
+                    messageQueue.poll();
+                    messageQueue.offer(queuedMessage);
+                    Log.w(TAG, "Message queue full, removed oldest message");
+                }
+                Log.d(TAG, "Message queued: " + message);
+            } catch (Exception e) {
+                Log.e(TAG, "Error queuing message", e);
+                // 降级到直接发送
+                client.send(message);
+                Log.d(TAG, "Message sent directly: " + message);
+            }
+        } else {
+            Log.w(TAG, "WebSocket not connected, cannot send message");
         }
     }
 
     public void sendBinaryMessage(byte[] data) {
         if (client != null && client.isOpen()) {
-            client.send(data);
+            try {
+                QueuedMessage queuedMessage = new QueuedMessage(data);
+                if (!messageQueue.offer(queuedMessage)) {
+                    // 队列满了，移除最旧的消息
+                    messageQueue.poll();
+                    messageQueue.offer(queuedMessage);
+                    Log.w(TAG, "Message queue full, removed oldest message");
+                }
+                Log.d(TAG, "Binary message queued, size: " + data.length);
+            } catch (Exception e) {
+                Log.e(TAG, "Error queuing binary message", e);
+                // 降级到直接发送
+                client.send(data);
+                Log.d(TAG, "Binary message sent directly, size: " + data.length);
+            }
+        } else {
+            Log.w(TAG, "WebSocket not connected, cannot send binary message");
         }
     }
-} 
+}

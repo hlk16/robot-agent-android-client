@@ -531,6 +531,13 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     //更新人文字
     public void updateRecognizedText(String text) {
         runOnUiThread(() -> {
+            // 过滤掉图像识别信息，只显示用户真正说的话
+            if (text != null && text.contains("[视觉]:")) {
+                // 这是图像识别信息，不显示给用户
+                Log.d("VoiceCall", "过滤图像识别信息: " + text);
+                return;
+            }
+            
             if (recognizedText != null) {
                 recognizedText.setText(text);
             }
@@ -983,29 +990,31 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             return;
         }
         
+        
+
+        
         // API已配置，初始化图像识别管理器===
         try {
             imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
                 @Override
                 public void onRecognitionResult(String content) {
                     runOnUiThread(() -> {
+                        // 直接发送文本消息
                         if (webSocketManager != null && webSocketManager.isConnected()) {
                             try {
                                 JSONObject jsonMessage = new JSONObject();
-//                                jsonMessage.put("type", "user_intent");
-//                                jsonMessage.put("content", content);
-//                                jsonMessage.put("source", "image_recognition");
-//                                jsonMessage.put("expect_voice_response", true);
                                 jsonMessage.put("type", "listen");
                                 jsonMessage.put("state", "detect");
-                                jsonMessage.put("text", content);
+                                // 优化提示词，确保AI模型能够完整连贯地复述内容
+                                jsonMessage.put("text", "[视觉]:" + content + "。请用自然流畅的语言完整地复述这个视觉描述，保持内容的连贯性和完整性。");
                                 jsonMessage.put("source", "text");
-                                webSocketManager.sendMessage(jsonMessage.toString()+"你需要返回你识别的内容");
+                                // 使用优先级发送确保图像识别结果及时处理
+                                webSocketManager.sendPriorityMessage(jsonMessage.toString());
                             } catch (Exception e) {
                                 Log.e("VoiceCall", "发送识别消息失败", e);
                             }
                         }
-                        Toast.makeText(Voice.this, content, Toast.LENGTH_SHORT).show();
+                        // Toast.makeText(Voice.this, "识别结果: " + content, Toast.LENGTH_SHORT).show(); // 隐藏识别结果Toast，只保留用户语音输入
                         Log.d("ImageRecognition", "识别结果: " + content);
                     });
                 }

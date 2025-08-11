@@ -556,6 +556,13 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     //更新人文字
     public void updateRecognizedText(String text) {
         runOnUiThread(() -> {
+            // 过滤掉图像识别信息，只显示用户真正说的话
+            if (text != null && text.contains("[视觉]:")) {
+                // 这是图像识别信息，不显示给用户
+                Log.d("VoiceCall", "过滤图像识别信息: " + text);
+                return;
+            }
+            
             if (recognizedText != null) {
                 recognizedText.setText(text);
             }
@@ -1047,8 +1054,22 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 @Override
                 public void onRecognitionResult(String content) {
                     runOnUiThread(() -> {
-
-                        Toast.makeText(VoiceCallActivity.this, content, Toast.LENGTH_SHORT).show();
+                        // 直接发送文本消息
+                        if (webSocketManager != null && webSocketManager.isConnected()) {
+                            try {
+                                JSONObject jsonMessage = new JSONObject();
+                                jsonMessage.put("type", "listen");
+                                jsonMessage.put("state", "detect");
+                                // 优化提示词，确保AI模型能够完整连贯地复述内容
+                                jsonMessage.put("text", "[视觉]:" + content + "。请用自然流畅的语言完整地复述这个视觉描述，保持内容的连贯性和完整性。");
+                                jsonMessage.put("source", "text");
+                                // 使用优先级发送确保图像识别结果及时处理
+                                webSocketManager.sendPriorityMessage(jsonMessage.toString());
+                            } catch (Exception e) {
+                                Log.e("VoiceCallActivity", "发送识别消息失败", e);
+                            }
+                        }
+                        // Toast.makeText(VoiceCallActivity.this, "识别结果: " + content, Toast.LENGTH_SHORT).show(); // 隐藏识别结果Toast
                         Log.d("ImageRecognition", "识别结果: " + content);
                     });
                 }

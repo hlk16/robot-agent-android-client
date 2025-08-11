@@ -7,6 +7,8 @@ import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.hardware.Camera;
 import android.util.Log;
+import android.os.Handler;
+import android.os.Looper;
 
 import com.iflytek.sparkchain.core.LLM;
 import com.iflytek.sparkchain.core.LLMCallbacks;
@@ -19,6 +21,7 @@ import com.iflytek.sparkchain.core.Memory;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ImageRecognitionManager {
     private static final String TAG = "ImageRecognitionManager";
@@ -26,6 +29,13 @@ public class ImageRecognitionManager {
     private LLM llm;
     private int token = 0;
     private ImageRecognitionCallback callback;
+    
+    // 消息缓冲机制
+    private StringBuilder messageBuffer = new StringBuilder();
+    private Handler delayHandler = new Handler(Looper.getMainLooper());
+    private Runnable sendBufferedMessageRunnable;
+    private AtomicBoolean isReceivingMessage = new AtomicBoolean(false);
+    private static final int MESSAGE_DELAY_MS = 1000; // 1秒延迟发送
 
     public interface ImageRecognitionCallback {
         void onRecognitionResult(String content);
@@ -52,14 +62,46 @@ public class ImageRecognitionManager {
             public void onLLMResult(LLMResult llmResult, Object usrContext) {
                 if (token == (int) usrContext) {
                     String content = llmResult.getContent();
-                    if (content != null && callback != null) {
-                        callback.onRecognitionResult(content);
+                    if (content != null && !content.trim().isEmpty()) {
+                        // 将内容添加到缓冲区
+                        synchronized (messageBuffer) {
+                            messageBuffer.append(content);
+                        }
+                        
+                        // 标记正在接收消息
+                        isReceivingMessage.set(true);
+                        
+                        // 取消之前的延迟发送任务
+                        if (sendBufferedMessageRunnable != null) {
+                            delayHandler.removeCallbacks(sendBufferedMessageRunnable);
+                        }
+                        
+                        // 创建新的延迟发送任务
+                        sendBufferedMessageRunnable = new Runnable() {
+                            @Override
+                            public void run() {
+                                sendBufferedMessage();
+                            }
+                        };
+                        
+                        // 延迟发送消息
+                        delayHandler.postDelayed(sendBufferedMessageRunnable, MESSAGE_DELAY_MS);
                     }
+                    
+                    // 检查是否完成
                     if (llmResult.getStatus() == 2) {
                         Log.d(TAG, String.format("Recognition completed - Tokens: completion=%d, prompt=%d, total=%d",
                                 llmResult.getCompletionTokens(),
                                 llmResult.getPromptTokens(),
                                 llmResult.getTotalTokens()));
+                        
+                        // 立即发送缓冲的消息
+                        delayHandler.post(new Runnable() {
+                            @Override
+                            public void run() {
+                                sendBufferedMessage();
+                            }
+                        });
                     }
                 }
             }
@@ -78,6 +120,31 @@ public class ImageRecognitionManager {
                 }
             }
         };
+    }
+    
+    /**
+     * 发送缓冲的消息
+     */
+    private void sendBufferedMessage() {
+        synchronized (messageBuffer) {
+            if (messageBuffer.length() > 0 && callback != null) {
+                String finalMessage = "[视觉]:" + messageBuffer.toString() + "（请用自然流畅的语言完整地复述这个视觉描述，保持内容的连贯性和完整性。）";
+                
+                // 使用优先级发送，确保图像识别结果能够及时处理
+                Log.d(TAG, "Sending buffered vision message with priority: " + finalMessage);
+                callback.onRecognitionResult(finalMessage);
+                
+                // 清空缓冲区
+                messageBuffer.setLength(0);
+            }
+        }
+        isReceivingMessage.set(false);
+        
+        // 清理延迟任务
+        if (sendBufferedMessageRunnable != null) {
+            delayHandler.removeCallbacks(sendBufferedMessageRunnable);
+            sendBufferedMessageRunnable = null;
+        }
     }
 
     public void processPreviewFrame(byte[] data, Camera camera) {
@@ -132,7 +199,9 @@ public class ImageRecognitionManager {
         }
         token++;
         llm.clearHistory();
-        int ret = llm.arun("这是什么", imageData, token);
+        // 优化提示词，要求完整描述并避免分段输出
+        String prompt = "请用一段完整的话描述这张图片中的内容，包括人物、物体、场景、动作等细节。请确保描述完整连贯，不要分段输出。";
+        int ret = llm.arun(prompt, imageData, token);
         if (ret != 0) {
             Log.e(TAG, "识别请求失败: " + ret);
             if (callback != null) {
@@ -142,6 +211,18 @@ public class ImageRecognitionManager {
     }
 
     public void release() {
+        // 清理延迟任务
+        if (sendBufferedMessageRunnable != null) {
+            delayHandler.removeCallbacks(sendBufferedMessageRunnable);
+            sendBufferedMessageRunnable = null;
+        }
+        
+        // 清空缓冲区
+        synchronized (messageBuffer) {
+            messageBuffer.setLength(0);
+        }
+        
+        isReceivingMessage.set(false);
         llm = null;
         callback = null;
     }
