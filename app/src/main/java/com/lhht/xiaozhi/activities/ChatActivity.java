@@ -7,6 +7,7 @@ import android.os.Handler;
 import android.os.Looper;
 import android.text.TextUtils;
 import android.util.Log;
+import android.view.MotionEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
@@ -224,8 +225,30 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         });
         
         // 快捷控制按钮点击事件
-        btnForward.setOnClickListener(v -> sendQuickCommand("前进"));
-        btnBackward.setOnClickListener(v -> sendQuickCommand("后退"));
+        btnForward.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    sendQuickCommand("前进");
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    sendQuickCommand("停止");
+                    break;
+            }
+            return true;
+        });
+        btnBackward.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    sendQuickCommand("后退");
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    sendQuickCommand("停止");
+                    break;
+            }
+            return true;
+        });
         btnLeft.setOnClickListener(v -> sendQuickCommand("左转"));
         btnRight.setOnClickListener(v -> sendQuickCommand("右转"));
         btnStop.setOnClickListener(v -> sendQuickCommand("停止"));
@@ -434,31 +457,25 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         // 检测其他命令
         if (content != null && content.contains("前进")) {
             VoiceCallActivity.order = 'a';
-            Toast.makeText(this, "收到前进指令", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "收到前进指令", Toast.LENGTH_SHORT).show();
         } else if (content != null && content.contains("后退")) {
             VoiceCallActivity.order = 'b';
-            Toast.makeText(this, "收到后退指令", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "收到后退指令", Toast.LENGTH_SHORT).show();
         } else if (content != null && content.contains("左转")) {
             VoiceCallActivity.order = 'c';
-            Toast.makeText(this, "收到左转指令", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "收到左转指令", Toast.LENGTH_SHORT).show();
         } else if (content != null && content.contains("右转")) {
             VoiceCallActivity.order = 'd';
-            Toast.makeText(this, "收到右转指令", Toast.LENGTH_SHORT).show();
-        }else if (content != null && content.contains("停下来")){
+//            Toast.makeText(this, "收到右转指令", Toast.LENGTH_SHORT).show();
+        }else if (content != null && content.contains("停止")){
             VoiceCallActivity.order = 'e';
-             Toast.makeText(this, "收到停止指令", Toast.LENGTH_SHORT).show();
-        }else if (tvCurrentDirection.getText().toString().equals("当前方向：前进") && content != null){
-            VoiceCallActivity.order = 'f';
-            Toast.makeText(this, "收到持续前进指令", Toast.LENGTH_SHORT).show();
+//             Toast.makeText(this, "收到停止指令", Toast.LENGTH_SHORT).show();
         }else if (tvCurrentDirection.getText().toString().equals("当前方向：左转") && content != null){
             VoiceCallActivity.order = 'c';
-            Toast.makeText(this, "收到左转指令", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "收到左转指令", Toast.LENGTH_SHORT).show();
         }else if (tvCurrentDirection.getText().toString().equals("当前方向：右转") && content != null){
             VoiceCallActivity.order = 'd';
-            Toast.makeText(this, "收到右转指令", Toast.LENGTH_SHORT).show();
-        }else if (tvCurrentDirection.getText().toString().equals("当前方向：后退") && content != null){
-            VoiceCallActivity.order = 'g';
-            Toast.makeText(this, "收到持续后退指令", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "收到右转指令", Toast.LENGTH_SHORT).show();
         }
 
 
