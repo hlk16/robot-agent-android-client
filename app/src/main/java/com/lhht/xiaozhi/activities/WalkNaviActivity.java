@@ -259,7 +259,7 @@ public class WalkNaviActivity extends AppCompatActivity {
 
         // 设置默认值
         etStartLocation.setText("家");
-        etDestLocation.setText("驿站");
+        // etDestLocation.setText("驿站"); // 已注释 - 用户反馈驿站输入框没什么用
 
         // 设置按钮文本
         btnUseCurrentLocation.setText("从当前位置导航");

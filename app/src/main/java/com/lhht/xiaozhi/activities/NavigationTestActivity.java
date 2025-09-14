@@ -111,7 +111,7 @@ public class NavigationTestActivity extends AppCompatActivity {
         tvNextRoad = findViewById(R.id.tv_next_road);
         
         // 设置默认目的地
-        etDestination.setText("驿站");
+        // etDestination.setText("驿站"); // 已注释 - 用户反馈驿站输入框没什么用
         
         // 初始状态
         tvServiceStatus.setText("服务状态: 未连接");

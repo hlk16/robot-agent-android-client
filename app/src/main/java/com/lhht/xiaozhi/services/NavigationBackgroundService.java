@@ -11,11 +11,13 @@ import android.content.pm.PackageManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
+import android.location.LocationProvider;
 import android.os.Binder;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.IBinder;
 import android.util.Log;
+import android.widget.Toast;
 import androidx.core.app.ActivityCompat;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
@@ -46,6 +48,10 @@ public class NavigationBackgroundService extends Service {
     // 定位相关
     private LocationManager locationManager;
     private Location currentLocation;
+    private int locationRetryCount = 0;
+    private static final int MAX_LOCATION_RETRY = 3;
+    private static final float MIN_ACCURACY = 50.0f; // 最小精度要求50米
+    private static final long LOCATION_TIMEOUT = 30000; // 30秒超时
     
     // 导航状态
     private boolean isNavigating = false;
@@ -273,6 +279,19 @@ public class NavigationBackgroundService extends Service {
                 @Override
                 public void onLocationChanged(Location location) {
                     Log.d(TAG, "获取到位置用于导航: " + location.getLatitude() + ", " + location.getLongitude());
+                    
+                    // 详细输出获取到的位置信息
+                    Log.i(TAG, "=== 获取到的当前位置详细信息 ===");
+                    Log.i(TAG, "纬度: " + location.getLatitude());
+                    Log.i(TAG, "经度: " + location.getLongitude());
+                    Log.i(TAG, "精度: " + location.getAccuracy() + "米");
+                    Log.i(TAG, "提供者: " + location.getProvider());
+                    Log.i(TAG, "时间: " + new java.util.Date(location.getTime()));
+                    Log.i(TAG, "海拔: " + (location.hasAltitude() ? location.getAltitude() + "米" : "未知"));
+                    Log.i(TAG, "速度: " + (location.hasSpeed() ? location.getSpeed() + "m/s" : "未知"));
+                    Log.i(TAG, "方向: " + (location.hasBearing() ? location.getBearing() + "度" : "未知"));
+                    Log.i(TAG, "=================================");
+                    
                     currentLocation = location;
                     
                     // 停止定位
@@ -329,9 +348,82 @@ public class NavigationBackgroundService extends Service {
      * 使用指定位置启动导航
      */
     private void startNavigationWithLocation(Location startLocation, NaviPoi destPoi) {
+        Log.i(TAG, "开始导航: 起点(" + startLocation.getLatitude() + ", " + startLocation.getLongitude() + ") -> 终点(" + destPoi.getLatitude() + ", " + destPoi.getLongitude() + ")");
+        Log.i(TAG, "起点定位信息: 精度=" + startLocation.getAccuracy() + "m, 提供者=" + startLocation.getProvider() + ", 时间=" + new java.util.Date(startLocation.getTime()));
+        
+        // 检查起点定位质量
+        if (startLocation.getAccuracy() > 100) {
+            Log.w(TAG, "起点定位精度较差(" + startLocation.getAccuracy() + "m)，可能影响导航效果");
+            updateNotification("定位精度较差，正在优化...");
+        }
+        
         // 创建起点POI
         NaviPoi startPoi = new NaviPoi(startLocation.getLatitude(), startLocation.getLongitude());
         startPoi.setPoiName("当前位置");
+        
+        // 详细输出当前位置的腾讯POI信息
+        Log.i(TAG, "=== 当前位置腾讯POI详细信息 ===");
+        Log.i(TAG, "起点POI - 纬度: " + startPoi.getLatitude());
+        Log.i(TAG, "起点POI - 经度: " + startPoi.getLongitude());
+        Log.i(TAG, "起点POI - 名称: " + startPoi.getPoiName());
+        Log.i(TAG, "目标POI - 纬度: " + destPoi.getLatitude());
+        Log.i(TAG, "目标POI - 经度: " + destPoi.getLongitude());
+        Log.i(TAG, "目标POI - 名称: " + destPoi.getPoiName());
+        Log.i(TAG, "原始Location - 纬度: " + startLocation.getLatitude());
+        Log.i(TAG, "原始Location - 经度: " + startLocation.getLongitude());
+        Log.i(TAG, "=================================");
+        
+        // 显示Toast提示当前位置和目的地坐标
+        String toastMessage = "导航信息:\n" +
+                "当前位置: (" + String.format("%.6f", startLocation.getLatitude()) + ", " + 
+                String.format("%.6f", startLocation.getLongitude()) + ")\n" +
+                "目的地: (" + String.format("%.6f", destPoi.getLatitude()) + ", " + 
+                String.format("%.6f", destPoi.getLongitude()) + ")\n" +
+                "目的地名称: " + destPoi.getPoiName();
+        Toast.makeText(this, toastMessage, Toast.LENGTH_LONG).show();
+        Log.i(TAG, "Toast显示: " + toastMessage.replace("\n", " | "));
+        
+        // 计算起终点距离
+        float[] results = new float[1];
+        Location.distanceBetween(startLocation.getLatitude(), startLocation.getLongitude(), destPoi.getLatitude(), destPoi.getLongitude(), results);
+        float distance = results[0];
+        
+        // 详细的距离计算调试信息
+        Log.i(TAG, "=== 距离计算详细信息 ===");
+        Log.i(TAG, "起点坐标: (" + startLocation.getLatitude() + ", " + startLocation.getLongitude() + ")");
+        Log.i(TAG, "终点坐标: (" + destPoi.getLatitude() + ", " + destPoi.getLongitude() + ")");
+        Log.i(TAG, "计算得到的距离: " + String.format("%.1f", distance) + "米 (" + String.format("%.2f", distance/1000) + "公里)");
+        
+        // 检查坐标是否合理
+        if (Math.abs(startLocation.getLatitude()) > 90 || Math.abs(startLocation.getLongitude()) > 180) {
+            Log.e(TAG, "起点坐标异常: 纬度=" + startLocation.getLatitude() + ", 经度=" + startLocation.getLongitude());
+        }
+        if (Math.abs(destPoi.getLatitude()) > 90 || Math.abs(destPoi.getLongitude()) > 180) {
+            Log.e(TAG, "终点坐标异常: 纬度=" + destPoi.getLatitude() + ", 经度=" + destPoi.getLongitude());
+        }
+        
+        // 计算纬度和经度差值
+        double latDiff = Math.abs(startLocation.getLatitude() - destPoi.getLatitude());
+        double lonDiff = Math.abs(startLocation.getLongitude() - destPoi.getLongitude());
+        Log.i(TAG, "纬度差值: " + String.format("%.6f", latDiff) + "度");
+        Log.i(TAG, "经度差值: " + String.format("%.6f", lonDiff) + "度");
+        Log.i(TAG, "===============================");
+        
+        // 检查距离是否过长（超过50公里认为不合理）
+        if (distance > 50000) { // 50公里
+            String errorMsg = "目的地距离过远(" + String.format("%.1f", distance/1000) + "公里)，建议选择较近的目的地";
+            Log.w(TAG, errorMsg);
+            updateNotification(errorMsg);
+            return;
+        }
+        
+        // 检查距离是否过近（小于10米认为已到达）
+        if (distance < 10) {
+            String msg = "您已在目的地附近(" + String.format("%.0f", distance) + "米)";
+            Log.i(TAG, msg);
+            updateNotification(msg);
+            return;
+        }
         
         Log.d(TAG, "开始导航规划 - 起点: " + startPoi.getLatitude() + "," + startPoi.getLongitude() +
               " 终点: " + destPoi.getLatitude() + "," + destPoi.getLongitude());
@@ -343,22 +435,46 @@ public class NavigationBackgroundService extends Service {
             naviManager.searchRoute(startPoi, destPoi, new TencentRouteSearchCallback() {
                 @Override
                 public void onCalcRouteSuccess(CalcRouteResult calcRouteResult) {
-                    Log.d(TAG, "路线计算成功");
+                    Log.i(TAG, "路线计算成功: 错误码=" + calcRouteResult.getErrorCode());
                 }
 
                 @Override
                 public void onCalcRouteFailure(CalcRouteResult calcRouteResult) {
-                    Log.e(TAG, "路线计算失败: " + calcRouteResult.getErrorCode());
-                    updateNotification("路线计算失败");
+                    String errorMsg = getRouteCalculationErrorMessage(calcRouteResult.getErrorCode());
+                    Log.e(TAG, "路线计算失败: 错误码=" + calcRouteResult.getErrorCode() + " " + errorMsg);
+                    updateNotification("路线计算失败: " + errorMsg);
+                    
+                    // 特别处理不同类型的错误
+                    int errorCode = calcRouteResult.getErrorCode();
+                    if (errorCode == -1 || errorMsg.contains("可导航区域")) {
+                        Log.w(TAG, "检测到'未到可导航区域'错误，进行详细诊断:");
+                        Log.w(TAG, "- 当前位置: (" + startLocation.getLatitude() + ", " + startLocation.getLongitude() + ")");
+                        Log.w(TAG, "- 定位精度: " + startLocation.getAccuracy() + "米");
+                        Log.w(TAG, "- 定位提供者: " + startLocation.getProvider());
+                        Log.w(TAG, "- 建议: 1)移动到更开阔的区域 2)等待GPS信号稳定 3)检查网络连接");
+                        updateNotification("未到可导航区域，请移动到开阔地带");
+                    } else if (errorCode == -6 || errorMsg.contains("路径太长")) {
+                        Log.w(TAG, "检测到'路径太长'错误，进行详细诊断:");
+                        Log.w(TAG, "- 起终点距离: " + String.format("%.1f", distance/1000) + "公里");
+                        Log.w(TAG, "- 建议: 1)选择较近的目的地 2)分段导航 3)使用其他交通方式");
+                        updateNotification("目的地距离过远，建议选择较近的目的地");
+                    } else if (errorCode == -9 || errorMsg.contains("定位精度")) {
+                        Log.w(TAG, "检测到'定位精度不足'错误:");
+                        Log.w(TAG, "- 当前定位精度: " + startLocation.getAccuracy() + "米");
+                        Log.w(TAG, "- 建议: 1)移动到空旷区域 2)等待GPS信号稳定 3)重新获取定位");
+                        updateNotification("定位精度不足，请移动到空旷区域");
+                    }
                 }
 
                 @Override
                 public void onRouteSearchSuccess(ArrayList<RouteData> routeDataList) {
-                    Log.d(TAG, "路线规划成功，开始导航");
+                    Log.i(TAG, "路线规划成功，路线数量: " + (routeDataList != null ? routeDataList.size() : 0));
                     if (!routeDataList.isEmpty()) {
+                        RouteData route = routeDataList.get(0);
+                        Log.i(TAG, "选择路线信息: 距离=" + route.getDistance() + "米, 时间=" + route.getRouteId() + "秒");
                         try {
                             naviManager.startNavi(0);
-                            updateNotification("导航启动成功");
+                            updateNotification("导航启动成功 - 距离" + route.getDistance() + "米");
                         } catch (Exception e) {
                             Log.e(TAG, "启动导航失败: " + e.getMessage());
                             updateNotification("导航启动失败: " + e.getMessage());
@@ -371,13 +487,128 @@ public class NavigationBackgroundService extends Service {
 
                 @Override
                 public void onRouteSearchFailure(int errorCode, String errorMsg) {
-                    Log.e(TAG, "路线规划失败: " + errorCode + ", " + errorMsg);
-                    updateNotification("路线规划失败: " + errorMsg);
+                    String detailedErrorMsg = getRouteSearchErrorMessage(errorCode, errorMsg);
+                    Log.e(TAG, "路线规划失败: 错误码=" + errorCode + " " + detailedErrorMsg);
+                    updateNotification("路线规划失败: " + detailedErrorMsg);
+                    
+                    // 特别处理不同类型的错误
+                    if (errorCode == -1 || errorMsg.contains("可导航区域") || detailedErrorMsg.contains("可导航区域")) {
+                        Log.w(TAG, "检测到'未到可导航区域'错误，进行详细诊断:");
+                        Log.w(TAG, "- 当前位置: (" + startLocation.getLatitude() + ", " + startLocation.getLongitude() + ")");
+                        Log.w(TAG, "- 定位精度: " + startLocation.getAccuracy() + "米");
+                        Log.w(TAG, "- 定位提供者: " + startLocation.getProvider());
+                        Log.w(TAG, "- 建议: 1)移动到更开阔的区域 2)等待GPS信号稳定 3)检查网络连接");
+                        updateNotification("未到可导航区域，请移动到开阔地带");
+                    } else if (errorCode == -6 || errorMsg.contains("路径太长") || detailedErrorMsg.contains("路径太长")) {
+                        Log.w(TAG, "检测到'路径太长'错误，进行详细诊断:");
+                        Log.w(TAG, "- 起终点距离: " + String.format("%.1f", distance/1000) + "公里");
+                        Log.w(TAG, "- 建议: 1)选择较近的目的地 2)分段导航 3)使用其他交通方式");
+                        updateNotification("目的地距离过远，建议选择较近的目的地");
+                    } else if (errorCode == -9 || errorMsg.contains("定位精度") || detailedErrorMsg.contains("定位精度")) {
+                        Log.w(TAG, "检测到'定位精度不足'错误:");
+                        Log.w(TAG, "- 当前定位精度: " + startLocation.getAccuracy() + "米");
+                        Log.w(TAG, "- 建议: 1)移动到空旷区域 2)等待GPS信号稳定 3)重新获取定位");
+                        updateNotification("定位精度不足，请移动到空旷区域");
+                    }
                 }
             });
+            Log.i(TAG, "路线规划请求已发送，等待回调...");
         } catch (Exception e) {
             Log.e(TAG, "路线规划异常: " + e.getMessage());
             updateNotification("路线规划异常: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 获取路线计算错误信息
+     */
+    private String getRouteCalculationErrorMessage(int errorCode) {
+        switch (errorCode) {
+            case -1:
+                return "未到可导航区域";
+            case -2:
+                return "网络连接失败";
+            case -3:
+                return "参数错误";
+            case -4:
+                return "起点或终点无效";
+            case -5:
+                return "路线计算超时";
+            case -6:
+                return "路径太长，超出导航范围";
+            case -7:
+                return "无法规划路线";
+            case -8:
+                return "服务器繁忙，请稍后重试";
+            case -9:
+                return "定位精度不足";
+            case -10:
+                return "起终点距离过近";
+            default:
+                return "未知错误(" + errorCode + ")";
+        }
+    }
+    
+    /**
+     * 获取路线搜索错误信息
+     */
+    private String getRouteSearchErrorMessage(int errorCode, String originalMsg) {
+        String detailedMsg = originalMsg;
+        switch (errorCode) {
+            case -1:
+                detailedMsg = "未到可导航区域";
+                break;
+            case -2:
+                detailedMsg = "网络连接失败";
+                break;
+            case -3:
+                detailedMsg = "参数错误";
+                break;
+            case -4:
+                detailedMsg = "起点或终点无效";
+                break;
+            case -5:
+                detailedMsg = "路线搜索超时";
+                break;
+            case -6:
+                detailedMsg = "路径太长，超出导航范围";
+                break;
+            case -7:
+                detailedMsg = "无法规划路线";
+                break;
+            case -8:
+                detailedMsg = "服务器繁忙，请稍后重试";
+                break;
+            case -9:
+                detailedMsg = "定位精度不足";
+                break;
+            case -10:
+                detailedMsg = "起终点距离过近";
+                break;
+            default:
+                if (originalMsg == null || originalMsg.isEmpty()) {
+                    detailedMsg = "未知错误(" + errorCode + ")";
+                }
+                break;
+        }
+        return detailedMsg;
+    }
+    
+    /**
+     * 获取导航错误信息
+     */
+    private String getNavigationErrorMessage(int errorCode) {
+        switch (errorCode) {
+            case -1:
+                return "导航初始化失败";
+            case -2:
+                return "路线数据无效";
+            case -3:
+                return "导航引擎异常";
+            case -4:
+                return "权限不足";
+            default:
+                return "未知错误(" + errorCode + ")";
         }
     }
     
@@ -530,16 +761,11 @@ public class NavigationBackgroundService extends Service {
                 poi = new NaviPoi(39.937967, 116.447857);
                 poi.setPoiName("三里屯");
                 break;
-            case "驿站":
-                poi = new NaviPoi(34.779570, 111.189615);
-                poi.setPoiName("驿站");
-                break;
-            default:
-                // 默认坐标（天安门广场）
-                Log.w(TAG, "未找到地址: " + locationName + "，使用默认坐标");
-                poi = new NaviPoi(39.917834, 116.397271);
-                poi.setPoiName(locationName);
-                break;
+//            case "驿站":
+//                poi = new NaviPoi(34.779570, 111.189615);
+//                poi.setPoiName("驿站");
+//                break;
+
         }
         
         return poi;
@@ -593,24 +819,61 @@ public class NavigationBackgroundService extends Service {
     private final LocationListener locationListener = new LocationListener() {
         @Override
         public void onLocationChanged(Location location) {
-            currentLocation = location;
             Log.d(TAG, "位置更新: " + location.getLatitude() + ", " + location.getLongitude() +
-                  ", 精度: " + location.getAccuracy() + "m");
+                  ", 精度: " + location.getAccuracy() + "m, 提供者: " + location.getProvider());
+            
+            // 检查定位精度
+            if (location.getAccuracy() > MIN_ACCURACY) {
+                Log.w(TAG, "定位精度不足: " + location.getAccuracy() + "m > " + MIN_ACCURACY + "m");
+                
+                // 如果精度不够且重试次数未达上限，尝试重新定位
+                if (locationRetryCount < MAX_LOCATION_RETRY) {
+                    locationRetryCount++;
+                    Log.i(TAG, "重新获取高精度定位，第" + locationRetryCount + "次尝试");
+                    requestHighAccuracyLocation();
+                    return;
+                } else {
+                    Log.w(TAG, "已达最大重试次数，使用当前定位: 精度" + location.getAccuracy() + "m");
+                }
+            } else {
+                Log.i(TAG, "定位精度良好: " + location.getAccuracy() + "m");
+                locationRetryCount = 0; // 重置重试计数
+            }
+            
+            // 检查GPS信号质量
+            checkGpsSignalQuality(location);
+            
+            currentLocation = location;
+            updateNotification("当前位置: 精度" + String.format("%.1f", location.getAccuracy()) + "m");
         }
         
         @Override
         public void onProviderEnabled(String provider) {
-            Log.d(TAG, "定位提供者启用: " + provider);
+            Log.i(TAG, "定位提供者启用: " + provider);
+            updateNotification("定位服务已启用: " + provider);
         }
         
         @Override
         public void onProviderDisabled(String provider) {
-            Log.d(TAG, "定位提供者禁用: " + provider);
+            Log.w(TAG, "定位提供者禁用: " + provider);
+            updateNotification("定位服务已禁用: " + provider);
+            
+            // 如果GPS被禁用，尝试使用网络定位
+            if (LocationManager.GPS_PROVIDER.equals(provider)) {
+                Log.i(TAG, "GPS被禁用，尝试使用网络定位");
+                requestNetworkLocation();
+            }
         }
         
         @Override
         public void onStatusChanged(String provider, int status, Bundle extras) {
-            Log.d(TAG, "定位状态改变: " + provider + ", status: " + status);
+            String statusText = getProviderStatusText(status);
+            Log.d(TAG, "定位状态改变: " + provider + ", status: " + statusText);
+            
+            if (status == LocationProvider.OUT_OF_SERVICE || status == LocationProvider.TEMPORARILY_UNAVAILABLE) {
+                Log.w(TAG, "定位服务不可用: " + provider + " - " + statusText);
+                updateNotification("定位服务异常: " + statusText);
+            }
         }
     };
     
@@ -666,5 +929,98 @@ public class NavigationBackgroundService extends Service {
                 .build();
         
         manager.notify(NOTIFICATION_ID, notification);
+    }
+    
+    /**
+     * 请求高精度定位
+     */
+    private void requestHighAccuracyLocation() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        
+        try {
+            // 停止当前定位
+            locationManager.removeUpdates(locationListener);
+            
+            // 请求更高精度的GPS定位
+            if (locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                        LocationManager.GPS_PROVIDER,
+                        2000, // 2秒间隔
+                        5.0f, // 5米距离
+                        locationListener);
+                Log.i(TAG, "已请求高精度GPS定位");
+            }
+        } catch (SecurityException e) {
+            Log.e(TAG, "请求高精度定位失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 请求网络定位
+     */
+    private void requestNetworkLocation() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            return;
+        }
+        
+        try {
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER,
+                        5000, // 5秒间隔
+                        10.0f, // 10米距离
+                        locationListener);
+                Log.i(TAG, "已启用网络定位作为备选");
+            }
+        } catch (SecurityException e) {
+            Log.e(TAG, "请求网络定位失败: " + e.getMessage());
+        }
+    }
+    
+    /**
+     * 检查GPS信号质量
+     */
+    private void checkGpsSignalQuality(Location location) {
+        if (location.getProvider().equals(LocationManager.GPS_PROVIDER)) {
+            float accuracy = location.getAccuracy();
+            String quality;
+            
+            if (accuracy <= 10) {
+                quality = "优秀";
+            } else if (accuracy <= 20) {
+                quality = "良好";
+            } else if (accuracy <= 50) {
+                quality = "一般";
+            } else {
+                quality = "较差";
+            }
+            
+            Log.d(TAG, "GPS信号质量: " + quality + " (精度: " + accuracy + "m)");
+            
+            // 如果信号质量较差，记录详细信息
+            if (accuracy > 30) {
+                Log.w(TAG, "GPS信号质量较差，可能影响导航准确性。建议移动到开阔区域。");
+            }
+        }
+    }
+    
+    /**
+     * 获取定位提供者状态文本
+     */
+    private String getProviderStatusText(int status) {
+        switch (status) {
+            case LocationProvider.AVAILABLE:
+                return "可用";
+            case LocationProvider.OUT_OF_SERVICE:
+                return "服务中断";
+            case LocationProvider.TEMPORARILY_UNAVAILABLE:
+                return "暂时不可用";
+            default:
+                return "未知状态(" + status + ")";
+        }
     }
 }

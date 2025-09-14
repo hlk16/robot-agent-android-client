@@ -430,24 +430,53 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         if (content != null && (content.contains("自动导航") || content.contains("自动导航") ||
             content.contains("[控制指令] 自动导航") || content.contains("[控制指令] 自动导航"))) {
             
-            // 检查是否包含坐标信息
-            double destinationLat = json.optDouble("destination_lat", 0.0);
-            double destinationLng = json.optDouble("destination_lng", 0.0);
-            
-            if (destinationLat != 0.0 && destinationLng != 0.0) {
-                // 使用接收到的坐标信息启动导航
-                Toast.makeText(this, "收到导航指令：开始导航到指定坐标", Toast.LENGTH_SHORT).show();
-                Log.d(TAG, "检测到带坐标的导航命令: " + content + ", 坐标: " + destinationLat + ", " + destinationLng);
+            // 检查消息内容中是否包含"目的地坐标"
+            if (content.contains("目的地坐标")) {
+                try {
+                    // 提取坐标信息
+                    String coordinateText = content.substring(content.indexOf("目的地坐标") + "目的地坐标".length()).trim();
+                    
+                    // 处理括号格式的坐标
+                    if (coordinateText.startsWith("(") && coordinateText.endsWith(")")) {
+                        coordinateText = coordinateText.substring(1, coordinateText.length() - 1);
+                    }
+                    
+                    String[] coordinates = coordinateText.split("[,，]");
+                    
+                    if (coordinates.length >= 2) {
+                        double parsedLat = Double.parseDouble(coordinates[0].trim());
+                        double parsedLng = Double.parseDouble(coordinates[1].trim());
+                        
+                        // 将坐标保存到类成员变量中，供后台服务使用
+                        this.destinationLat = parsedLat;
+                        this.destinationLng = parsedLng;
+                        this.hasDestinationCoordinates = true;
+                        
+                        // 使用提取到的坐标信息启动导航
+                         Toast.makeText(this, "收到导航指令：开始导航到指定坐标 (" + this.destinationLat + ", " + this.destinationLng + ")", Toast.LENGTH_LONG).show();
+                         Log.d(TAG, "从消息内容提取到坐标并保存到成员变量: " + this.destinationLat + ", " + this.destinationLng);
+                        
+                        // 启动导航服务并导航到指定坐标
+                        startNavigationToCoordinatesWithService(this.destinationLat, this.destinationLng, "目的地");
+                    } else {
+                        Log.e(TAG, "坐标格式错误: " + coordinateText);
+                        Toast.makeText(this, "坐标格式错误，请检查消息格式", Toast.LENGTH_SHORT).show();
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "解析坐标时出错: " + e.getMessage());
+                    Toast.makeText(this, "解析坐标失败，请检查消息格式", Toast.LENGTH_SHORT).show();
+                }
+            } else if (hasDestinationCoordinates && this.destinationLat != 0.0 && this.destinationLng != 0.0) {
+                // 使用之前保存的POI坐标启动导航
+                Toast.makeText(this, "收到导航指令：开始导航到已选择的目的地", Toast.LENGTH_SHORT).show();
+                Log.d(TAG, "检测到导航命令，使用已保存的POI坐标: " + content + ", 坐标: " + this.destinationLat + ", " + this.destinationLng);
                 
-                // 启动导航服务并导航到指定坐标
-                 startNavigationToCoordinatesWithService(destinationLat, destinationLng, "目的地");
+                // 启动导航服务并导航到保存的POI坐标
+                startNavigationToCoordinatesWithService(this.destinationLat, this.destinationLng, "已选择目的地");
             } else {
-                // 使用默认目的地启动导航
-                Toast.makeText(this, "收到导航指令：开始导航", Toast.LENGTH_SHORT).show();
-                Log.d(TAG, "检测到导航命令: " + content);
-                
-                // 启动导航服务并导航到驿站
-                startNavigationToYizhan();
+                // 没有可用的坐标信息，提示用户先选择目的地
+                Toast.makeText(this, "请先选择目的地或发送包含坐标的导航指令", Toast.LENGTH_LONG).show();
+                Log.d(TAG, "检测到导航命令但没有可用的目的地坐标: " + content);
             }
             
             // 启动OpenCV图像检测服务
@@ -651,7 +680,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             
             // 如果有目的地坐标信息，添加到消息中
             if (hasDestinationCoordinates) {
-                commandContent += " 目的地坐标: " + destinationLat + "," + destinationLng;
+                commandContent += " 目的地坐标(" + destinationLat + "," + destinationLng + ")";
                 message.put("destination_lat", destinationLat);
                 message.put("destination_lng", destinationLng);
                 Log.d(TAG, "发送自动导航指令，包含目的地坐标: (" + destinationLat + ", " + destinationLng + ")");
@@ -710,6 +739,19 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
     private void clearMessages() {
         tvMessages.setText("");
+        // 同时清除目的地坐标信息
+        clearDestinationCoordinates();
+    }
+    
+    /**
+     * 清除已保存的目的地坐标信息
+     */
+    private void clearDestinationCoordinates() {
+        destinationLat = 0.0;
+        destinationLng = 0.0;
+        hasDestinationCoordinates = false;
+        Log.d(TAG, "已清除目的地坐标信息");
+        Toast.makeText(this, "已清除目的地坐标信息", Toast.LENGTH_SHORT).show();
     }
 
     private void addMessage(String sender, String content, String timestamp) {
@@ -1495,6 +1537,35 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 tvDestinationDistance.setText(NavigationServiceManager.formatDistance(distanceToDestination));
                 tvCurrentDirection.setText(currentDirection);
                 tvNextTurnDistance.setText(NavigationServiceManager.formatDistance(distanceToNext));
+                
+                // 检测是否到达目的地（距离小于等于50米）
+                if (distanceToDestination <= 50) {
+                    VoiceCallActivity.order = 'e';
+//                    Log.d(TAG, "已到达目的地，距离: " + distanceToDestination + "m，设置order = 'e'");
+                    
+                    // 发送"已到达"消息给另外一个客户端
+                    etMessage.setText("已到达");
+                    sendChatMessage();
+                    etMessage.setText("");
+                    
+                    // 停止导航更新
+                    stopNavigationUpdates();
+                    Toast.makeText(this, "已到达目的地", Toast.LENGTH_SHORT).show();
+                } else {
+                    // 根据导航方向设置VoiceCallActivity.order
+                    if (currentDirection != null) {
+                        if (currentDirection.contains("直行") || currentDirection.contains("前进")) {
+                            VoiceCallActivity.order = 'a';
+//                            Log.d(TAG, "导航方向：直行，设置order = 'a'");
+                        } else if (currentDirection.contains("左转") || currentDirection.contains("左拐")) {
+                            VoiceCallActivity.order = 'c';
+//                            Log.d(TAG, "导航方向：左转，设置order = 'c'");
+                        } else if (currentDirection.contains("右转") || currentDirection.contains("右拐")) {
+                            VoiceCallActivity.order = 'd';
+//                            Log.d(TAG, "导航方向：右转，设置order = 'd'");
+                        }
+                    }
+                }
             } else {
                 // 导航结束或无效数据，停止更新
                 String reason = isNavigating ? "距离无效(" + distanceToDestination + ")" : "导航未启动";
@@ -1583,7 +1654,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             // 开始更新检测信息显示
             startDetectionUpdates();
             
-            Toast.makeText(this, "图像检测服务已启动", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "图像检测服务已启动", Toast.LENGTH_SHORT).show();
             Log.d(TAG, "OpenCV图像检测服务已启动");
         } else {
             Toast.makeText(this, "图像检测服务已在运行", Toast.LENGTH_SHORT).show();
@@ -1686,12 +1757,19 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             
             Log.d(TAG, "接收到POI信息: " + poiName + " (" + poiLat + ", " + poiLng + ")");
              
-             // 保存目的地坐标信息
+             // 清除之前的目的地坐标信息
+             destinationLat = 0.0;
+             destinationLng = 0.0;
+             hasDestinationCoordinates = false;
+             
+             // 保存新的目的地坐标信息
              if (poiLat != 0.0 && poiLng != 0.0) {
                  destinationLat = poiLat;
                  destinationLng = poiLng;
                  hasDestinationCoordinates = true;
-                 Log.d(TAG, "已保存目的地坐标: (" + destinationLat + ", " + destinationLng + ")");
+                 Log.d(TAG, "已保存新的目的地坐标: (" + destinationLat + ", " + destinationLng + ")");
+             } else {
+                 Log.d(TAG, "接收到的POI坐标无效，已清除目的地坐标信息");
              }
              
              // 构建POI信息消息

@@ -518,6 +518,7 @@
                     android:textColor="#333333"
                     android:layout_marginBottom="12dp" />
 
+                <!-- 驿站目的地输入框已注释 - 用户反馈没什么用
                 <com.google.android.material.textfield.TextInputLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -533,6 +534,7 @@
                         android:text="驿站" />
 
                 </com.google.android.material.textfield.TextInputLayout>
+                -->
 
                 <Button
                     android:id="@+id/search_button"
@@ -1039,7 +1041,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:hint="聊天服务器地址"
-                        android:text="ws://192.168.0.102:8009/ws/chat/" />
+                        android:text="ws://frp-pet.com:29641/ws/chat/" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
