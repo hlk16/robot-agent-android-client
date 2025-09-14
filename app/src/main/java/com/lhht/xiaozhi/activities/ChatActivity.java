@@ -1429,7 +1429,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         Log.d(TAG, "准备启动导航到驿站，服务连接状态: " + navigationServiceManager.isServiceConnected());
         
         if (navigationServiceManager.startNavigationToDestination("驿站")) {
-            Toast.makeText(this, "开始导航到驿站", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "开始导航到驿站", Toast.LENGTH_SHORT).show();
             
             // 发送导航启动成功消息到聊天
             etMessage.setText("导航启动成功，正在前往驿站");
@@ -1625,7 +1625,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private  void  iniLoadOpenCV(){
         boolean loaded = OpenCVLoader.initDebug();
         if (loaded) {
-            Toast.makeText(this, "OpenCV 加载成功", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "OpenCV 加载成功", Toast.LENGTH_SHORT).show();
         } else {
             Toast.makeText(this, "OpenCV 加载失败", Toast.LENGTH_SHORT).show();
             Log.e(TAG, "OpenCV 加载失败");
@@ -1657,7 +1657,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 //            Toast.makeText(this, "图像检测服务已启动", Toast.LENGTH_SHORT).show();
             Log.d(TAG, "OpenCV图像检测服务已启动");
         } else {
-            Toast.makeText(this, "图像检测服务已在运行", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "图像检测服务已在运行", Toast.LENGTH_SHORT).show();
         }
     }
     
