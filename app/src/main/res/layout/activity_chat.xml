@@ -1057,7 +1057,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:hint="WebRTC服务器地址"
-                        android:text="ws://192.168.0.102:8009/ws/webrtc/" />
+                        android:text="ws://frp-pet.com:29641/ws/webrtc/" />
 
                 </com.google.android.material.textfield.TextInputLayout>
 
