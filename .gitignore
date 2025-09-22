@@ -71,3 +71,7 @@ lint/tmp/
 
 # Gradle wrapper
 !gradle/wrapper/gradle-wrapper.jar
+
+# Xiaozhi SDK folders
+xiaozhi.sdk/
+xiaozhi.sdk.main/
