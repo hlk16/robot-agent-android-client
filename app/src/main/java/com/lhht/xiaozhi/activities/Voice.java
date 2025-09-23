@@ -105,6 +105,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private short[] recordBuffer;
     private boolean isAuth = false;
     private ImageRecognitionManager imageRecognitionManager;
+    private boolean isVideoUnderstanding = false; // 标识是否正在进行视频理解
     
     // 回声消除和噪声抑制
     private AcousticEchoCanceler echoCanceler;
@@ -395,6 +396,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         }
 
+        // 检查线程池状态
+        if (executorService == null || executorService.isShutdown() || executorService.isTerminated()) {
+            Log.w("VoiceCall", "ExecutorService已关闭，无法开始录音");
+            return;
+        }
+
         executorService.execute(() -> {
             try {
                 audioRecord.startRecording();
@@ -491,13 +498,104 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
     //挂断
     private void endCall() {
-        stopRecording();
-        if (audioTrack != null) {
-            audioTrack.stop();
-            audioTrack.release();
-            audioTrack = null;
+        try {
+            // 停止录音
+            isRecording = false;
+            stopRecording();
+            
+            // 停止播放线程
+            stopPlaybackThread();
+            
+            // 安全释放AudioTrack
+            if (audioTrack != null) {
+                try {
+                    if (audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
+                        audioTrack.stop();
+                    }
+                    audioTrack.release();
+                } catch (Exception e) {
+                    Log.e("VoiceCall", "释放AudioTrack失败", e);
+                } finally {
+                    audioTrack = null;
+                }
+            }
+            
+            // 释放摄像头资源
+            stopCameraPreview();
+            
+            // 发送结束消息并断开WebSocket连接
+            if (webSocketManager != null) {
+                try {
+                    if (webSocketManager.isConnected()) {
+                        JSONObject endMessage = new JSONObject();
+                        endMessage.put("type", "end");
+                        webSocketManager.sendMessage(endMessage.toString());
+                    }
+                    webSocketManager.disconnect();
+                } catch (Exception e) {
+                    Log.e("VoiceCall", "关闭WebSocket连接失败", e);
+                }
+            }
+            
+            // 释放音频焦点
+            abandonAudioFocus();
+            
+            // 恢复默认音频模式
+            try {
+                AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+                audioManager.setMode(AudioManager.MODE_NORMAL);
+            } catch (Exception e) {
+                Log.e("VoiceCall", "恢复音频模式失败", e);
+            }
+            
+            // 关闭线程池
+            if (executorService != null && !executorService.isShutdown()) {
+                executorService.shutdown();
+            }
+            if (audioExecutor != null && !audioExecutor.isShutdown()) {
+                audioExecutor.shutdown();
+            }
+            if (playbackExecutor != null && !playbackExecutor.isShutdown()) {
+                playbackExecutor.shutdown();
+            }
+            
+            // 释放Opus编解码器
+            if (encoderHandle != 0) {
+                try {
+                    opusUtils.destroyEncoder(encoderHandle);
+                } catch (Exception e) {
+                    Log.e("VoiceCall", "释放Opus编码器失败", e);
+                } finally {
+                    encoderHandle = 0;
+                }
+            }
+            if (decoderHandle != 0) {
+                try {
+                    opusUtils.destroyDecoder(decoderHandle);
+                } catch (Exception e) {
+                    Log.e("VoiceCall", "释放Opus解码器失败", e);
+                } finally {
+                    decoderHandle = 0;
+                }
+            }
+            
+            // 释放图像识别管理器
+            if (imageRecognitionManager != null) {
+                try {
+                    imageRecognitionManager.release();
+                } catch (Exception e) {
+                    Log.e("VoiceCall", "释放图像识别管理器失败", e);
+                } finally {
+                    imageRecognitionManager = null;
+                }
+            }
+            
+        } catch (Exception e) {
+            Log.e("VoiceCall", "endCall执行失败", e);
+        } finally {
+            // 确保Activity能够正常结束
+            finish();
         }
-        finish();
     }
     //打断===
     private void interruptAiResponse() {
@@ -621,6 +719,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
 
     private void stopCurrentAudio() {
+        // 检查线程池状态
+        if (audioExecutor == null || audioExecutor.isShutdown() || audioExecutor.isTerminated()) {
+            Log.w("VoiceCall", "AudioExecutor已关闭，无法停止音频");
+            return;
+        }
+        
         audioExecutor.execute(() -> {
             try {
                 if (audioTrack != null && isPlaying) {
@@ -725,6 +829,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             return;
         }
 
+        // 检查线程池状态，避免在已关闭的线程池中执行任务
+        if (audioExecutor == null || audioExecutor.isShutdown() || audioExecutor.isTerminated()) {
+            Log.w("VoiceCall", "AudioExecutor已关闭，忽略音频数据");
+            return;
+        }
+
         audioExecutor.execute(() -> {
             try {
                 Log.d("AudioDebug", "收到音频数据长度: " + data.length + " bytes");
@@ -819,6 +929,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
      }
      
      private void startPlaybackThread() {
+         // 检查线程池状态
+         if (playbackExecutor == null || playbackExecutor.isShutdown() || playbackExecutor.isTerminated()) {
+             Log.w("VoiceCall", "PlaybackExecutor已关闭，无法启动播放线程");
+             return;
+         }
+         
          isPlaybackThreadRunning = true;
          playbackExecutor.execute(() -> {
              Log.d("AudioPlayback", "播放线程启动");
@@ -1005,8 +1121,19 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                                 JSONObject jsonMessage = new JSONObject();
                                 jsonMessage.put("type", "listen");
                                 jsonMessage.put("state", "detect");
-                                // 优化提示词，确保AI模型能够完整连贯地复述内容
-                                jsonMessage.put("text", "[视觉]:" + content + "。请用自然流畅的语言完整地复述这个视觉描述，保持内容的连贯性和完整性。");
+                                // 根据视频理解状态和内容长度动态调整提示词，优化响应速度
+                                String prompt;
+                                if (isVideoUnderstanding || content.length() > 100) {
+                                    // 主动视频理解或长内容使用完整复述
+                                    prompt = "[视觉]:" + content + "。请用自然流畅的语言完整地复述这个视觉描述，保持内容的连贯性和完整性。";
+                                } else {
+                                    // 普通图像识别场景使用简洁回复，提高响应速度
+                                    prompt = "[视觉]:" + content + "。请简洁地描述看到的内容。";
+                                }
+                                jsonMessage.put("text", prompt);
+                                
+                                // 重置视频理解状态
+                                isVideoUnderstanding = false;
                                 jsonMessage.put("source", "text");
                                 // 使用优先级发送确保图像识别结果及时处理
                                 webSocketManager.sendPriorityMessage(jsonMessage.toString());
@@ -1043,6 +1170,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             Toast.makeText(Voice.this, "未配置讯飞API，无法使用图像识别功能", Toast.LENGTH_SHORT).show();
             return;
         }
+
+        // 设置视频理解状态为true，表示这是主动的视频理解请求
+        isVideoUnderstanding = true;
 
         camera.setPreviewCallback(new Camera.PreviewCallback() {
             @Override
