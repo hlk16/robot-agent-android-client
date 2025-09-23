@@ -12,6 +12,7 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -56,7 +57,8 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     
     private EditText etUserId, etNickname, etTargetUser, etMessage, etRoomId, etServerUrl, etWebrtcServerUrl;
     private TextView tvStatus, tvOnlineUsers, tvMessages;
-    private Button btnConnect, btnSend, btnGetUsers, btnPing, btnClear;
+    private Button btnConnect, btnSend, btnGetUsers, btnClear;
+    private ScrollView chatScrollView;
     private Button btnForward, btnBackward, btnLeft, btnRight, btnStop;
     private Button btnNavigation; // 自动导航按钮
     private Button btnsearch; // 搜索按钮
@@ -160,7 +162,6 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         btnConnect = findViewById(R.id.btnConnect);
         btnSend = findViewById(R.id.btnSend);
         btnGetUsers = findViewById(R.id.btnGetUsers);
-        btnPing = findViewById(R.id.btnPing);
         btnClear = findViewById(R.id.btnClear);
         
         // 快捷控制按钮
@@ -196,6 +197,33 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         etServerUrl = findViewById(R.id.etServerUrl);
         etWebrtcServerUrl = findViewById(R.id.etWebrtcServerUrl);
         btnsearch = findViewById(R.id.search_button);
+        
+        // 聊天消息ScrollView
+        chatScrollView = findViewById(R.id.chatScrollView);
+        setupChatScrollView();
+    }
+
+    private void setupChatScrollView() {
+        if (chatScrollView != null) {
+            chatScrollView.setOnTouchListener(new View.OnTouchListener() {
+                @Override
+                public boolean onTouch(View v, MotionEvent event) {
+                    // 请求父视图不要拦截触摸事件
+                    v.getParent().requestDisallowInterceptTouchEvent(true);
+                    
+                    switch (event.getAction() & MotionEvent.ACTION_MASK) {
+                        case MotionEvent.ACTION_UP:
+                        case MotionEvent.ACTION_CANCEL:
+                            // 释放触摸时，允许父视图重新拦截触摸事件
+                            v.getParent().requestDisallowInterceptTouchEvent(false);
+                            break;
+                    }
+                    
+                    // 返回false让ScrollView正常处理滑动事件
+                    return false;
+                }
+            });
+        }
     }
 
     private void initWebSocket() {
@@ -217,7 +245,6 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
         btnSend.setOnClickListener(v -> sendChatMessage());
         btnGetUsers.setOnClickListener(v -> getOnlineUsers());
-        btnPing.setOnClickListener(v -> sendPing());
         btnClear.setOnClickListener(v -> clearMessages());
         btnsearch.setOnClickListener(view -> {
             Intent intent = new Intent(ChatActivity.this, SearchNaviActivity.class);
@@ -249,8 +276,30 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             }
             return true;
         });
-        btnLeft.setOnClickListener(v -> sendQuickCommand("左转"));
-        btnRight.setOnClickListener(v -> sendQuickCommand("右转"));
+        btnLeft.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    sendQuickCommand("左转");
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    sendQuickCommand("停止");
+                    break;
+            }
+            return true;
+        });
+        btnRight.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    sendQuickCommand("右转");
+                    break;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    sendQuickCommand("停止");
+                    break;
+            }
+            return true;
+        });
         btnStop.setOnClickListener(v -> sendQuickCommand("停止"));
         btnNavigation.setOnClickListener(v -> sendNavigationCommand()); // 自动导航按钮点击事件
         
@@ -381,7 +430,6 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         btnConnect.setText(connected ? "断开" : "连接");
         btnSend.setEnabled(connected);
         btnGetUsers.setEnabled(connected);
-        btnPing.setEnabled(connected);
     }
 
     private void handleMessage(String message) {
@@ -723,19 +771,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         }
     }
 
-    private void sendPing() {
-        try {
-            JSONObject message = new JSONObject();
-            message.put("type", "ping");
 
-            if (webSocket != null) {
-                webSocket.send(message.toString());
-                addMessage("心跳", "发送心跳检测", getCurrentTime());
-            }
-        } catch (JSONException e) {
-             Toast.makeText(this, "心跳格式错误", Toast.LENGTH_SHORT).show();
-        }
-    }
 
     private void clearMessages() {
         tvMessages.setText("");
@@ -751,7 +787,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         destinationLng = 0.0;
         hasDestinationCoordinates = false;
         Log.d(TAG, "已清除目的地坐标信息");
-        Toast.makeText(this, "已清除目的地坐标信息", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "已清除目的地坐标信息和聊天消息", Toast.LENGTH_SHORT).show();
     }
 
     private void addMessage(String sender, String content, String timestamp) {

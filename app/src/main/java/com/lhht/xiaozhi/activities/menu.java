@@ -19,11 +19,11 @@ public class menu extends AppCompatActivity {
     private Button mtableRobot;
     private Button mnbIot;
     private Button more;
-    private Button drone;
+
     private Button manus;
     private Button navgation;
     private Button chat;
-    private Button video;
+
 
     @SuppressLint("MissingInflatedId")
     @Override
@@ -41,8 +41,8 @@ public class menu extends AppCompatActivity {
         mnbIot= findViewById(R.id.nbIot);
         more= findViewById(R.id.morePluge);
         manus= findViewById(R.id.manus);
-        drone=findViewById(R.id.drone);
-        navgation=findViewById(R.id.navigation);
+
+//        navgation=findViewById(R.id.navigation);
         chat=findViewById(R.id.chat);
 //        video=findViewById(R.id.video);
         mtableRobot.setOnClickListener(view -> {
@@ -62,20 +62,20 @@ public class menu extends AppCompatActivity {
         more.setOnClickListener(view -> {
             Toast.makeText(this, "敬请期待", Toast.LENGTH_SHORT).show();
         });
-        drone.setOnClickListener(view -> {
-
-            Intent intent = new Intent(menu.this, DroneActivity.class);
-            startActivity(intent);
-        });
+//        drone.setOnClickListener(view -> {
+//
+//            Intent intent = new Intent(menu.this, DroneActivity.class);
+//            startActivity(intent);
+//        });
         manus.setOnClickListener(view -> {
             Toast.makeText(this, "敬请期待", Toast.LENGTH_SHORT).show();
-            Intent intent = new Intent(menu.this, NavigationTestActivity.class);
-            startActivity(intent);
+//            Intent intent = new Intent(menu.this, NavigationTestActivity.class);
+//            startActivity(intent);
         });
-        navgation.setOnClickListener(view -> {
-            Intent intent = new Intent(menu.this, WalkNaviActivity.class);
-            startActivity(intent);
-        });
+//        navgation.setOnClickListener(view -> {
+//            Intent intent = new Intent(menu.this, WalkNaviActivity.class);
+//            startActivity(intent);
+//        });
         chat.setOnClickListener(view -> {
             Intent intent = new Intent(menu.this, ChatActivity.class);
             startActivity(intent);

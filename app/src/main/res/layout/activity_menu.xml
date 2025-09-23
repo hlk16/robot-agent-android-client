@@ -32,17 +32,17 @@
         android:gravity="center"
         android:text="智能家居" />
 
-    <Button
-        android:id="@+id/drone"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="无人机控制" />
-    <Button
-        android:id="@+id/navigation"
-        android:gravity="center"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="导航" />
+<!--    <Button-->
+<!--        android:id="@+id/drone"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="wrap_content"-->
+<!--        android:text="无人机控制" />-->
+<!--    <Button-->
+<!--        android:id="@+id/navigation"-->
+<!--        android:gravity="center"-->
+<!--        android:layout_width="match_parent"-->
+<!--        android:layout_height="wrap_content"-->
+<!--        android:text="导航" />-->
     <Button
         android:id="@+id/chat"
         android:gravity="center"
