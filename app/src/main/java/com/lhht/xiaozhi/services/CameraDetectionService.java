@@ -28,6 +28,8 @@ import org.opencv.android.OpenCVLoader;
 import org.opencv.core.Mat;
 import org.opencv.core.MatOfPoint;
 import org.opencv.core.CvType;
+import org.opencv.core.Core;
+import org.opencv.core.Scalar;
 import org.opencv.imgproc.Imgproc;
 
 import com.lhht.xiaozhi.managers.DataManager;
@@ -55,15 +57,29 @@ public class CameraDetectionService extends Service {
     private String cameraId;
     private Size previewSize;
     
-    // OpenCV 检测参数
-    private double cannyThreshold1 = 150;
-    private double cannyThreshold2 = 300;
-    private double minContourArea = 100;
+    // 道路检测参数
+    private static final int SCAN_START_RATIO = 50; // 从图像50%高度开始扫描
+    private static final int EDGE_CONTINUITY_THRESHOLD = 50; // 边缘连续性阈值
+    private static final int WHITE_PIXEL_THRESHOLD = 128; // 白色像素阈值
+    private static final int DISTANCE_THRESHOLD_MIN = 200; // 最小安全距离
+    private static final int DISTANCE_THRESHOLD_MAX = 350; // 最大安全距离
+    private static final double TARGET_DISTANCE = 275.0; // 目标距离（安全区间中心）
+    
+    // PID控制参数
+    private static final double PID_KP = 0.8;  // 比例系数
+    private static final double PID_KI = 0.1;  // 积分系数
+    private static final double PID_KD = 0.3;  // 微分系数
+    private PIDController pidController;
+    private boolean pidControlEnabled = true; // PID控制开关
+    
+    // 方向预测相关变量已移除
     
     // 检测结果存储
-    private org.opencv.core.Point circleCenter = null;
     private int frameWidth = 0;
     private int frameHeight = 0;
+    private double roadDistance = 0.0;
+    private double pidOutput = 0.0;
+    private String roadStatus = "未检测";
     
     @Override
     public void onCreate() {
@@ -84,6 +100,11 @@ public class CameraDetectionService extends Service {
         } else {
             Log.d(TAG, "OpenCV initialization succeeded");
         }
+        
+        // 初始化PID控制器
+        pidController = new PIDController(PID_KP, PID_KI, PID_KD);
+        pidController.setSetpoint(TARGET_DISTANCE);
+        pidController.setOutputLimits(-100.0, 100.0);
         
         // 创建通知渠道
         createNotificationChannel();
@@ -339,11 +360,11 @@ public class CameraDetectionService extends Service {
                 return;
             }
             
-            // 执行轮廓检测
-            detectContours(rgbaMat);
+            // 执行道路检测
+            detectRoadLanes(rgbaMat);
             
             // 更新数据到DataManager
-            updateDataManager(rgbaMat);
+            updateDataManager();
             
             // 释放Mat资源
             rgbaMat.release();
@@ -388,143 +409,210 @@ public class CameraDetectionService extends Service {
     }
     
     /**
-     * 物体轮廓检测方法
+     * 道路车道线检测方法
      */
-    private void detectContours(Mat rgbaMat) {
+    private void detectRoadLanes(Mat rgbaMat) {
         try {
-            // 重置圆心坐标
-            circleCenter = null;
-            
             Mat grayMat = new Mat();
-            Mat cannyMat = new Mat();
+            Mat binaryMat = new Mat();
             
             // 1. 转换为灰度图像
             Imgproc.cvtColor(rgbaMat, grayMat, Imgproc.COLOR_RGBA2GRAY);
             
             // 2. 高斯模糊，减少噪声
-            Imgproc.GaussianBlur(grayMat, grayMat, new org.opencv.core.Size(5, 5), 0);
+            Imgproc.GaussianBlur(grayMat, grayMat, new org.opencv.core.Size(7, 7), 2.0);
             
-            // 3. Canny边缘检测
-            Imgproc.Canny(grayMat, cannyMat, cannyThreshold1, cannyThreshold2);
+            // 3. 二值化处理
+            Imgproc.threshold(grayMat, binaryMat, 0, 255, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU);
             
-            // 4. 查找轮廓
-            List<MatOfPoint> contours = new ArrayList<>();
-            Mat hierarchy = new Mat();
-            Imgproc.findContours(cannyMat, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE);
+            // 4. 创建ROI掩码
+            Mat roiMask = createROIMask(rgbaMat.rows(), rgbaMat.cols());
+            Mat maskedBinary = new Mat();
+            Core.bitwise_and(binaryMat, roiMask, maskedBinary);
             
-            // 5. 处理轮廓并寻找圆心
-            processContours(contours, rgbaMat);
+            // 5. 扫描车道线
+            List<org.opencv.core.Point> leftLanePoints = new ArrayList<>();
+            List<org.opencv.core.Point> rightLanePoints = new ArrayList<>();
+            List<org.opencv.core.Point> centerLinePoints = new ArrayList<>();
+            
+            scanLaneLines(maskedBinary, leftLanePoints, rightLanePoints, centerLinePoints);
+            
+            // 6. 计算车辆与右车道线的距离和PID输出
+            calculateDistanceAndPID(rightLanePoints, rgbaMat.cols(), rgbaMat.rows());
             
             // 释放临时Mat
             grayMat.release();
-            cannyMat.release();
-            hierarchy.release();
+            binaryMat.release();
+            roiMask.release();
+            maskedBinary.release();
             
         } catch (Exception e) {
-            Log.e(TAG, "轮廓检测出错: " + e.getMessage());
+            Log.e(TAG, "道路检测出错: " + e.getMessage());
         }
     }
     
     /**
-     * 处理轮廓并寻找圆心位置
+     * 创建六边形ROI掩码
      */
-    private void processContours(List<MatOfPoint> contours, Mat rgbaMat) {
-        int validContours = 0;
-        List<org.opencv.core.Rect> boundingRects = new ArrayList<>();
+    private Mat createROIMask(int height, int width) {
+        Mat mask = Mat.zeros(height, width, CvType.CV_8UC1);
         
-        for (int i = 0; i < contours.size(); i++) {
-            // 计算轮廓面积，过滤小轮廓
-            double area = Imgproc.contourArea(contours.get(i));
-            
-            if (area > minContourArea) {
-                // 计算轮廓的边界矩形
-                org.opencv.core.Rect boundingRect = Imgproc.boundingRect(contours.get(i));
-                boundingRects.add(boundingRect);
-                validContours++;
-            }
-        }
+        // 定义六边形顶点
+        List<org.opencv.core.Point> roiPoints = new ArrayList<>();
+        roiPoints.add(new org.opencv.core.Point(width * 0.1, height * 0.95));
+        roiPoints.add(new org.opencv.core.Point(width * 0.4, height * 0.6));
+        roiPoints.add(new org.opencv.core.Point(width * 0.6, height * 0.6));
+        roiPoints.add(new org.opencv.core.Point(width * 0.9, height * 0.95));
+        roiPoints.add(new org.opencv.core.Point(width * 0.9, height));
+        roiPoints.add(new org.opencv.core.Point(width * 0.1, height));
         
-        // 在没有矩形的区域寻找圆心
-        findCircleCenter(boundingRects, rgbaMat);
+        // 创建多边形掩码
+        MatOfPoint roiPolygon = new MatOfPoint();
+        roiPolygon.fromList(roiPoints);
+        List<MatOfPoint> polygons = new ArrayList<>();
+        polygons.add(roiPolygon);
         
-        Log.d(TAG, "Detected " + validContours + " valid contours");
+        Imgproc.fillPoly(mask, polygons, new Scalar(255));
+        
+        return mask;
     }
     
     /**
-     * 在没有矩形的区域寻找圆心
+     * 扫描车道线
      */
-    private void findCircleCenter(List<org.opencv.core.Rect> boundingRects, Mat rgbaMat) {
-        if (rgbaMat == null) return;
+    private void scanLaneLines(Mat binary, List<org.opencv.core.Point> leftLanePoints, 
+                              List<org.opencv.core.Point> rightLanePoints, 
+                              List<org.opencv.core.Point> centerLinePoints) {
         
-        int imageWidth = rgbaMat.cols();
-        int imageHeight = rgbaMat.rows();
-        int circleRadius = 50;
+        int height = binary.rows();
+        int width = binary.cols();
+        int startY = height * SCAN_START_RATIO / 100;
         
-        // 定义候选圆心位置，优先选择中心区域
-        org.opencv.core.Point[] candidatePoints = {
-            new org.opencv.core.Point(imageWidth * 0.5, imageHeight * 0.5),   // 正中心
-            new org.opencv.core.Point(imageWidth * 0.4, imageHeight * 0.5),   // 中心偏左
-            new org.opencv.core.Point(imageWidth * 0.6, imageHeight * 0.5),   // 中心偏右
-            new org.opencv.core.Point(imageWidth * 0.5, imageHeight * 0.4),   // 中心偏上
-            new org.opencv.core.Point(imageWidth * 0.5, imageHeight * 0.6),   // 中心偏下
-            new org.opencv.core.Point(imageWidth * 0.3, imageHeight * 0.3),   // 左上中心区域
-            new org.opencv.core.Point(imageWidth * 0.7, imageHeight * 0.3),   // 右上中心区域
-            new org.opencv.core.Point(imageWidth * 0.3, imageHeight * 0.7),   // 左下中心区域
-            new org.opencv.core.Point(imageWidth * 0.7, imageHeight * 0.7),   // 右下中心区域
-        };
-        
-        // 检查每个候选位置是否与矩形重叠
-        for (org.opencv.core.Point center : candidatePoints) {
-            boolean isOverlapping = false;
-            
-            for (org.opencv.core.Rect rect : boundingRects) {
-                // 检查圆心是否在矩形内或圆形是否与矩形重叠
-                double distanceToRect = getDistanceToRect(center, rect);
-                if (distanceToRect < circleRadius) {
-                    isOverlapping = true;
-                    break;
+        // 逐行扫描
+        for (int y = startY; y < height; y += 5) {
+            // 扫描左车道线（图像左半部分）
+            for (int x = 0; x < width / 2; x++) {
+                double[] pixel = binary.get(y, x);
+                if (pixel != null && pixel[0] > WHITE_PIXEL_THRESHOLD) {
+                    // 检查边缘连续性
+                    if (checkEdgeContinuity(binary, x, y, true)) {
+                        leftLanePoints.add(new org.opencv.core.Point(x, y));
+                        break; // 找到左车道线后跳出
+                    }
                 }
             }
             
-            // 如果没有重叠，设置为圆心
-            if (!isOverlapping) {
-                circleCenter = center;
-                break; // 只选择一个圆心
+            // 扫描右车道线（图像右半部分）
+            for (int x = width - 1; x >= width / 2; x--) {
+                double[] pixel = binary.get(y, x);
+                if (pixel != null && pixel[0] > WHITE_PIXEL_THRESHOLD) {
+                    // 检查边缘连续性
+                    if (checkEdgeContinuity(binary, x, y, false)) {
+                        rightLanePoints.add(new org.opencv.core.Point(x, y));
+                        break; // 找到右车道线后跳出
+                    }
+                }
             }
+        }
+        
+        // 计算中心线点
+        int minSize = Math.min(leftLanePoints.size(), rightLanePoints.size());
+        for (int i = 0; i < minSize; i++) {
+            org.opencv.core.Point leftPoint = leftLanePoints.get(i);
+            org.opencv.core.Point rightPoint = rightLanePoints.get(i);
+            
+            double centerX = (leftPoint.x + rightPoint.x) / 2;
+            double centerY = (leftPoint.y + rightPoint.y) / 2;
+            centerLinePoints.add(new org.opencv.core.Point(centerX, centerY));
         }
     }
     
     /**
-     * 计算点到矩形的最短距离
+     * 检查边缘连续性
      */
-    private double getDistanceToRect(org.opencv.core.Point point, org.opencv.core.Rect rect) {
-        double dx = Math.max(0, Math.max(rect.x - point.x, point.x - (rect.x + rect.width)));
-        double dy = Math.max(0, Math.max(rect.y - point.y, point.y - (rect.y + rect.height)));
-        return Math.sqrt(dx * dx + dy * dy);
+    private boolean checkEdgeContinuity(Mat binary, int x, int y, boolean isLeft) {
+        int continuityCount = 0;
+        int checkRange = 10; // 检查范围
+        
+        // 检查垂直方向的连续性
+        for (int dy = -checkRange; dy <= checkRange; dy++) {
+            int checkY = y + dy;
+            if (checkY >= 0 && checkY < binary.rows()) {
+                double[] pixel = binary.get(checkY, x);
+                if (pixel != null && pixel[0] > WHITE_PIXEL_THRESHOLD) {
+                    continuityCount++;
+                }
+            }
+        }
+        
+        return continuityCount >= 5; // 至少5个连续点
     }
+    
+    /**
+     * 计算车辆与右车道线的距离和PID输出
+     */
+    private void calculateDistanceAndPID(List<org.opencv.core.Point> rightLanePoints, int imageWidth, int imageHeight) {
+        // 小车位置：图像底部中心
+        org.opencv.core.Point carPosition = new org.opencv.core.Point(imageWidth / 2.0, imageHeight - 1);
+        
+        // 查找最底部的右车道线点（y值最大）
+        org.opencv.core.Point bottomRightPoint = null;
+        double maxY = -1;
+        
+        for (org.opencv.core.Point point : rightLanePoints) {
+            // 只考虑图像下半部分的点
+            if (point.y > imageHeight * 0.7 && point.y > maxY) {
+                maxY = point.y;
+                bottomRightPoint = point;
+            }
+        }
+        
+        if (bottomRightPoint != null) {
+            // 计算水平距离（只考虑x方向的距离）
+            roadDistance = Math.abs(bottomRightPoint.x - carPosition.x);
+            
+            // PID控制计算
+            if (pidControlEnabled && pidController != null) {
+                pidOutput = pidController.calculate(roadDistance);
+            } else {
+                pidOutput = 0.0;
+            }
+            
+            // 根据距离区间判断状态
+            if (roadDistance >= DISTANCE_THRESHOLD_MIN && roadDistance <= DISTANCE_THRESHOLD_MAX) {
+                roadStatus = "直行";
+            } else if (roadDistance > DISTANCE_THRESHOLD_MAX) {
+                roadStatus = "右偏";
+            } else {
+                roadStatus = "左偏";
+            }
+            
+            Log.d(TAG, String.format("道路检测 - 距离: %.1f, PID输出: %.1f, 状态: %s", 
+                roadDistance, pidOutput, roadStatus));
+        } else {
+            roadDistance = 0.0;
+            pidOutput = 0.0;
+            roadStatus = "未检测";
+        }
+    }
+    
+
     
     /**
      * 更新数据到DataManager
      */
-    private void updateDataManager(Mat rgbaMat) {
-        try {
-            // 计算画布中心坐标
-            double centerX = rgbaMat.cols() / 2.0;
-            double centerY = rgbaMat.rows() / 2.0;
-            
-            // 更新数据到DataManager
-            if (circleCenter != null) {
-                dataManager.updateData(centerX, centerY, circleCenter.x, circleCenter.y);
-                
-                Log.d(TAG, String.format("Detection - Canvas: (%.0f, %.0f), Circle: (%.0f, %.0f)", 
-                    centerX, centerY, circleCenter.x, circleCenter.y));
-            } else {
-                dataManager.updateData(centerX, centerY, null, null);
-                Log.d(TAG, "No circle detected");
-            }
-            
-        } catch (Exception e) {
-            Log.e(TAG, "Error updating data manager: " + e.getMessage());
-        }
+    private void updateDataManager() {
+        DataManager dataManager = DataManager.getInstance(this);
+        
+        // 更新道路检测结果
+        dataManager.setRoadDistance(roadDistance);
+        dataManager.setPidOutput(pidOutput);
+        dataManager.setRoadStatus(roadStatus);
+        
+        // 更新检测状态
+        dataManager.setDetectionActive(isDetecting);
+        
+        Log.d(TAG, String.format("数据已更新到DataManager - 距离: %.1f, PID: %.1f, 状态: %s", 
+            roadDistance, pidOutput, roadStatus));
     }
 }

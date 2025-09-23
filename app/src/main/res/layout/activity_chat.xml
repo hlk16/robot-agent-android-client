@@ -903,7 +903,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="🎯 检测状态:"
+                            android:text="🎯 PID:"
                             android:textSize="14sp"
                             android:textColor="#666666" />
 
@@ -911,7 +911,7 @@
                             android:id="@+id/tvDetectionStatus"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="等待检测数据..."
+                            android:text="等待PID参数..."
                             android:textSize="14sp"
                             android:textStyle="bold"
                             android:textColor="#2196F3"
@@ -931,7 +931,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="📊 偏差数据:"
+                            android:text="📊 道路检查:"
                             android:textSize="14sp"
                             android:textColor="#666666" />
 
@@ -939,7 +939,7 @@
                             android:id="@+id/tvDetectionData"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="未检测到目标"
+                            android:text="未检测到道路"
                             android:textSize="14sp"
                             android:textStyle="bold"
                             android:textColor="#4CAF50"

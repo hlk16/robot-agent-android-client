@@ -1755,16 +1755,29 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
      */
     private void updateDetectionInfo() {
         if (dataManager != null && tvDetectionStatus != null && tvDetectionData != null) {
-            // 更新检测状态
-            tvDetectionStatus.setText(dataManager.getDetectionStatus());
+            // 更新PID状态显示
+            if (dataManager.isDataValid() && dataManager.isDetectionActive()) {
+                String pidStatus = String.format("PID: %.1f | %s", 
+                    dataManager.getPidOutput(), dataManager.getRoadStatus());
+                tvDetectionStatus.setText(pidStatus);
+            } else {
+                tvDetectionStatus.setText("等待PID参数...");
+            }
             
-            // 更新检测数据
-            tvDetectionData.setText(dataManager.getFormattedDelta());
+            // 更新道路检测数据显示
+            if (dataManager.isDataValid() && dataManager.isDetectionActive()) {
+                String roadInfo = String.format("距离: %.1f", 
+                    dataManager.getRoadDistance());
+                tvDetectionData.setText(roadInfo);
+            } else {
+                tvDetectionData.setText("道路检测未激活");
+            }
             
-            // 如果有有效数据，可以在这里添加更多的UI更新逻辑
-            if (dataManager.isDataValid() && dataManager.isCircleDetected()) {
-                Log.d(TAG, "检测到目标 - X偏差: " + dataManager.getDeltaX() + 
-                      ", Y偏差: " + dataManager.getDeltaY());
+            // 日志输出道路检测信息
+            if (dataManager.isDataValid() && dataManager.isDetectionActive()) {
+                Log.d(TAG, String.format("道路检测 - 距离: %.1f, PID: %.1f, 状态: %s", 
+                    dataManager.getRoadDistance(), dataManager.getPidOutput(), 
+                    dataManager.getRoadStatus()));
             }
         }
     }
