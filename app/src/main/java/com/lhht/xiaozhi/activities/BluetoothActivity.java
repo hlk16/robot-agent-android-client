@@ -31,6 +31,7 @@ public class BluetoothActivity extends AppCompatActivity {
     // UUID 是一个 128 位的值，通常用于在分布式系统中标识信息。
     public static UUID MY_UUID= UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");//符合UUID格式就行。
     Button back=null;
+    Button btnGoToChat=null;
     ListView btList=null;
     Intent intent=null;
     //蓝牙操作
@@ -54,6 +55,7 @@ public class BluetoothActivity extends AppCompatActivity {
         setContentView(R.layout.activity_bluetooth);
 
         back=(Button) findViewById(R.id.back);
+        btnGoToChat=(Button) findViewById(R.id.btnGoToChat);
         btList=(ListView) findViewById(R.id.btList);
 
         back.setOnClickListener(new View.OnClickListener() {
@@ -70,6 +72,22 @@ public class BluetoothActivity extends AppCompatActivity {
                     Toast.makeText(BluetoothActivity.this,"蓝牙未连接",Toast.LENGTH_SHORT).show();
                 }
 
+            }
+        });
+
+        btnGoToChat.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                //在跳转到ChatActivity的操作中开启发送数据的线程
+                if(bluetoothSocket!=null&&bluetoothSocket.isConnected()){//先判断连接上了
+                    connectedThread=new ConnectedThread(bluetoothSocket);
+                    connectedThread.start();
+                    Toast.makeText(BluetoothActivity.this,"已开启数据线程，蓝牙真正连接",Toast.LENGTH_SHORT).show();
+                    intent=new Intent(BluetoothActivity.this,ChatActivity.class);
+                    startActivity(intent);
+                }else {
+                    Toast.makeText(BluetoothActivity.this,"蓝牙未连接",Toast.LENGTH_SHORT).show();
+                }
             }
         });
 

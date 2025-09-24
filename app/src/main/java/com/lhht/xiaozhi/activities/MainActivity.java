@@ -712,7 +712,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         isAuth = (ret == 0);
         Log.d("SDK", isAuth ? "SDK初始化成功" : "SDK初始化失败,错误码: " + ret);
         if (isAuth) {
-            Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show();
         } else {
             Toast.makeText(this, "SDK初始化失败，请检查API配置", Toast.LENGTH_LONG).show();
         }

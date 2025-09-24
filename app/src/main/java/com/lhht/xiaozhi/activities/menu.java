@@ -46,11 +46,11 @@ public class menu extends AppCompatActivity {
         chat=findViewById(R.id.chat);
 //        video=findViewById(R.id.video);
         mtableRobot.setOnClickListener(view -> {
-            //跳转到桌面机器人界面
-            if (!MainActivity.webSocketManager.isConnected()) {
-                Toast.makeText(this, "请先连接", Toast.LENGTH_SHORT).show();
-                return;
-            }
+//            //跳转到桌面机器人界面
+//            if (!MainActivity.webSocketManager.isConnected()) {
+//                Toast.makeText(this, "请先连接", Toast.LENGTH_SHORT).show();
+//                return;
+//            }
             Intent intent = new Intent(menu.this, BluetoothActivity.class);
             startActivity(intent);
         });
