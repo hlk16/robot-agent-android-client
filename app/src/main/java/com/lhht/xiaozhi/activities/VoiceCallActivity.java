@@ -102,6 +102,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private ImageRecognitionManager imageRecognitionManager;
     private ConnectedThread connectedThread;
     public static char order='x';
+    public static double roadDistance = 0.0; // 距离右侧车道线距离，用于蓝牙发送
     private boolean isVideoUnderstanding = false; // 标识是否正在进行视频理解
     
     // 回声消除相关

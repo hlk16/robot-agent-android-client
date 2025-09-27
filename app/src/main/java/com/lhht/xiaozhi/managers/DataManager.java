@@ -19,7 +19,6 @@ public class DataManager {
     
     // 道路检测相关键值
     private static final String KEY_ROAD_DISTANCE = "roadDistance";
-    private static final String KEY_PID_OUTPUT = "pidOutput";
     private static final String KEY_ROAD_STATUS = "roadStatus";
     private static final String KEY_ROAD_DIRECTION = "roadDirection";
     private static final String KEY_DETECTION_ACTIVE = "detectionActive";
@@ -164,15 +163,6 @@ public class DataManager {
     }
     
     /**
-     * 设置PID输出值
-     */
-    public void setPidOutput(double pidOutput) {
-        SharedPreferences.Editor editor = sharedPreferences.edit();
-        editor.putFloat(KEY_PID_OUTPUT, (float) pidOutput);
-        editor.apply();
-    }
-    
-    /**
      * 设置道路状态
      */
     public void setRoadStatus(String status) {
@@ -207,13 +197,6 @@ public class DataManager {
     }
     
     /**
-     * 获取PID输出值
-     */
-    public float getPidOutput() {
-        return sharedPreferences.getFloat(KEY_PID_OUTPUT, 0f);
-    }
-    
-    /**
      * 获取道路状态
      */
     public String getRoadStatus() {
@@ -239,8 +222,8 @@ public class DataManager {
      */
     public String getFormattedRoadInfo() {
         if (isDataValid() && isDetectionActive()) {
-            return String.format("距离: %.1f | PID: %.1f | %s | %s", 
-                getRoadDistance(), getPidOutput(), getRoadStatus(), getRoadDirection());
+            return String.format("距离: %.1f | %s | %s", 
+                getRoadDistance(), getRoadStatus(), getRoadDirection());
         } else {
             return "道路检测未激活";
         }

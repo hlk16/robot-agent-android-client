@@ -13,6 +13,7 @@ import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -96,6 +97,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private Handler detectionUpdateHandler;
     private Runnable detectionUpdateRunnable;
     private TextView tvDetectionStatus, tvDetectionData;
+    private Switch switchImageDetection; // 图像检测开关
     
     // POI目的地坐标信息
     private double destinationLat = 0.0;
@@ -192,6 +194,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         // 检测信息显示UI元素
         tvDetectionStatus = findViewById(R.id.tvDetectionStatus);
         tvDetectionData = findViewById(R.id.tvDetectionData);
+        switchImageDetection = findViewById(R.id.switchImageDetection); // 图像检测开关
         
         // 服务器地址配置输入框
         etServerUrl = findViewById(R.id.etServerUrl);
@@ -326,6 +329,17 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         
         btnCameraToggle.setOnClickListener(v -> {
             toggleCamera();
+        });
+        
+        // 图像检测开关点击事件
+        switchImageDetection.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            if (isChecked) {
+                // 开启图像检测服务
+                startCameraDetectionService();
+            } else {
+                // 关闭图像检测服务
+                stopCameraDetectionService();
+            }
         });
     }
 
@@ -1410,53 +1424,53 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     /**
      * 启动导航到驿站
      */
-    private void startNavigationToYizhan() {
-        Log.d(TAG, "开始启动导航到驿站");
-        
-        // 检查定位权限
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                != PackageManager.PERMISSION_GRANTED) {
-            Toast.makeText(this, "需要定位权限才能启动导航", Toast.LENGTH_LONG).show();
-            
-            // 发送权限缺失消息到聊天
-            etMessage.setText("导航启动失败：缺少定位权限，请在设置中授予定位权限后重试");
-            sendChatMessage();
-            etMessage.setText("");
-            
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
-                               Manifest.permission.ACCESS_BACKGROUND_LOCATION},
-                    PERMISSION_REQUEST_CODE);
-            return;
-        }
-        
-        // 启动并绑定导航服务
-        if (!navigationServiceManager.isServiceConnected()) {
-            // 设置待启动标志，等待服务连接回调
-            pendingNavigationStart = true;
-            navigationServiceManager.startAndBindService();
-            Toast.makeText(this, "正在启动导航服务...", Toast.LENGTH_SHORT).show();
-            Log.d(TAG, "导航服务未连接，正在启动服务并设置待启动标志");
-            
-            // 设置超时检查，如果5秒后服务仍未连接，则提示失败
-            mainHandler.postDelayed(() -> {
-                if (pendingNavigationStart && !navigationServiceManager.isServiceConnected()) {
-                    pendingNavigationStart = false;
-                    Toast.makeText(this, "导航服务启动超时，请重试", Toast.LENGTH_LONG).show();
-                    
-                    // 发送服务启动超时消息到聊天
-                    etMessage.setText("导航服务启动超时，请检查网络连接后重试");
-                    sendChatMessage();
-                    etMessage.setText("");
-                    
-                    Log.w(TAG, "导航服务启动超时");
-                }
-            }, 5000);
-        } else {
-            // 服务已连接，直接启动导航
-            startNavigationToDestination();
-        }
-    }
+//    private void startNavigationToYizhan() {
+//        Log.d(TAG, "开始启动导航到驿站");
+//
+//        // 检查定位权限
+//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+//                != PackageManager.PERMISSION_GRANTED) {
+//            Toast.makeText(this, "需要定位权限才能启动导航", Toast.LENGTH_LONG).show();
+//
+//            // 发送权限缺失消息到聊天
+//            etMessage.setText("导航启动失败：缺少定位权限，请在设置中授予定位权限后重试");
+//            sendChatMessage();
+//            etMessage.setText("");
+//
+//            ActivityCompat.requestPermissions(this,
+//                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+//                               Manifest.permission.ACCESS_BACKGROUND_LOCATION},
+//                    PERMISSION_REQUEST_CODE);
+//            return;
+//        }
+//
+//        // 启动并绑定导航服务
+//        if (!navigationServiceManager.isServiceConnected()) {
+//            // 设置待启动标志，等待服务连接回调
+//            pendingNavigationStart = true;
+//            navigationServiceManager.startAndBindService();
+//            Toast.makeText(this, "正在启动导航服务...", Toast.LENGTH_SHORT).show();
+//            Log.d(TAG, "导航服务未连接，正在启动服务并设置待启动标志");
+//
+//            // 设置超时检查，如果5秒后服务仍未连接，则提示失败
+//            mainHandler.postDelayed(() -> {
+//                if (pendingNavigationStart && !navigationServiceManager.isServiceConnected()) {
+//                    pendingNavigationStart = false;
+//                    Toast.makeText(this, "导航服务启动超时，请重试", Toast.LENGTH_LONG).show();
+//
+//                    // 发送服务启动超时消息到聊天
+//                    etMessage.setText("导航服务启动超时，请检查网络连接后重试");
+//                    sendChatMessage();
+//                    etMessage.setText("");
+//
+//                    Log.w(TAG, "导航服务启动超时");
+//                }
+//            }, 5000);
+//        } else {
+//            // 服务已连接，直接启动导航
+//            startNavigationToDestination();
+//        }
+//    }
     
     /**
      * 启动导航到目的地
@@ -1679,6 +1693,10 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             ActivityCompat.requestPermissions(this,
                     new String[]{Manifest.permission.CAMERA},
                     PERMISSION_REQUEST_CODE);
+            // 权限被拒绝时，将开关状态重置为关闭
+            if (switchImageDetection != null) {
+                switchImageDetection.setChecked(false);
+            }
             return;
         }
         
@@ -1690,10 +1708,15 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             // 开始更新检测信息显示
             startDetectionUpdates();
             
-//            Toast.makeText(this, "图像检测服务已启动", Toast.LENGTH_SHORT).show();
+            // 更新开关状态
+            if (switchImageDetection != null) {
+                switchImageDetection.setChecked(true);
+            }
+            
+            Toast.makeText(this, "图像检测服务已启动", Toast.LENGTH_SHORT).show();
             Log.d(TAG, "OpenCV图像检测服务已启动");
         } else {
-//            Toast.makeText(this, "图像检测服务已在运行", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "图像检测服务已在运行", Toast.LENGTH_SHORT).show();
         }
     }
     
@@ -1708,6 +1731,19 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             
             // 停止更新检测信息显示
             stopDetectionUpdates();
+            
+            // 更新开关状态
+            if (switchImageDetection != null) {
+                switchImageDetection.setChecked(false);
+            }
+            
+            // 清空检测信息显示
+            if (tvDetectionStatus != null) {
+                tvDetectionStatus.setText("等待距离参数...");
+            }
+            if (tvDetectionData != null) {
+                tvDetectionData.setText("未检测到道路");
+            }
             
             Toast.makeText(this, "图像检测服务已停止", Toast.LENGTH_SHORT).show();
             Log.d(TAG, "OpenCV图像检测服务已停止");
@@ -1755,13 +1791,13 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
      */
     private void updateDetectionInfo() {
         if (dataManager != null && tvDetectionStatus != null && tvDetectionData != null) {
-            // 更新PID状态显示
+            // 更新距离状态显示
             if (dataManager.isDataValid() && dataManager.isDetectionActive()) {
-                String pidStatus = String.format("PID: %.1f | %s", 
-                    dataManager.getPidOutput(), dataManager.getRoadStatus());
-                tvDetectionStatus.setText(pidStatus);
+                String distanceStatus = String.format("距离右侧车道线: %.1f | %s", 
+                    dataManager.getRoadDistance(), dataManager.getRoadStatus());
+                tvDetectionStatus.setText(distanceStatus);
             } else {
-                tvDetectionStatus.setText("等待PID参数...");
+                tvDetectionStatus.setText("等待检测数据...");
             }
             
             // 更新道路检测数据显示
@@ -1775,9 +1811,11 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             
             // 日志输出道路检测信息
             if (dataManager.isDataValid() && dataManager.isDetectionActive()) {
-                Log.d(TAG, String.format("道路检测 - 距离: %.1f, PID: %.1f, 状态: %s", 
-                    dataManager.getRoadDistance(), dataManager.getPidOutput(), 
-                    dataManager.getRoadStatus()));
+                Log.d(TAG, String.format("道路检测 - 距离: %.1f, 状态: %s", 
+                    dataManager.getRoadDistance(), dataManager.getRoadStatus()));
+                
+                // 将距离值设置到VoiceCallActivity的静态变量中，用于蓝牙发送
+                VoiceCallActivity.roadDistance = dataManager.getRoadDistance();
             }
         }
     }

@@ -63,14 +63,6 @@ public class CameraDetectionService extends Service {
     private static final int WHITE_PIXEL_THRESHOLD = 128; // 白色像素阈值
     private static final int DISTANCE_THRESHOLD_MIN = 200; // 最小安全距离
     private static final int DISTANCE_THRESHOLD_MAX = 350; // 最大安全距离
-    private static final double TARGET_DISTANCE = 275.0; // 目标距离（安全区间中心）
-    
-    // PID控制参数
-    private static final double PID_KP = 0.8;  // 比例系数
-    private static final double PID_KI = 0.1;  // 积分系数
-    private static final double PID_KD = 0.3;  // 微分系数
-    private PIDController pidController;
-    private boolean pidControlEnabled = true; // PID控制开关
     
     // 方向预测相关变量已移除
     
@@ -78,7 +70,6 @@ public class CameraDetectionService extends Service {
     private int frameWidth = 0;
     private int frameHeight = 0;
     private double roadDistance = 0.0;
-    private double pidOutput = 0.0;
     private String roadStatus = "未检测";
     
     @Override
@@ -101,10 +92,7 @@ public class CameraDetectionService extends Service {
             Log.d(TAG, "OpenCV initialization succeeded");
         }
         
-        // 初始化PID控制器
-        pidController = new PIDController(PID_KP, PID_KI, PID_KD);
-        pidController.setSetpoint(TARGET_DISTANCE);
-        pidController.setOutputLimits(-100.0, 100.0);
+
         
         // 创建通知渠道
         createNotificationChannel();
@@ -437,8 +425,8 @@ public class CameraDetectionService extends Service {
             
             scanLaneLines(maskedBinary, leftLanePoints, rightLanePoints, centerLinePoints);
             
-            // 6. 计算车辆与右车道线的距离和PID输出
-            calculateDistanceAndPID(rightLanePoints, rgbaMat.cols(), rgbaMat.rows());
+            // 6. 计算车辆与右车道线的距离
+             calculateDistanceAndPID(rightLanePoints, rgbaMat.cols(), rgbaMat.rows());
             
             // 释放临时Mat
             grayMat.release();
@@ -549,8 +537,8 @@ public class CameraDetectionService extends Service {
     }
     
     /**
-     * 计算车辆与右车道线的距离和PID输出
-     */
+      * 计算车辆与右车道线的距离
+      */
     private void calculateDistanceAndPID(List<org.opencv.core.Point> rightLanePoints, int imageWidth, int imageHeight) {
         // 小车位置：图像底部中心
         org.opencv.core.Point carPosition = new org.opencv.core.Point(imageWidth / 2.0, imageHeight - 1);
@@ -571,13 +559,6 @@ public class CameraDetectionService extends Service {
             // 计算水平距离（只考虑x方向的距离）
             roadDistance = Math.abs(bottomRightPoint.x - carPosition.x);
             
-            // PID控制计算
-            if (pidControlEnabled && pidController != null) {
-                pidOutput = pidController.calculate(roadDistance);
-            } else {
-                pidOutput = 0.0;
-            }
-            
             // 根据距离区间判断状态
             if (roadDistance >= DISTANCE_THRESHOLD_MIN && roadDistance <= DISTANCE_THRESHOLD_MAX) {
                 roadStatus = "直行";
@@ -587,11 +568,10 @@ public class CameraDetectionService extends Service {
                 roadStatus = "左偏";
             }
             
-            Log.d(TAG, String.format("道路检测 - 距离: %.1f, PID输出: %.1f, 状态: %s", 
-                roadDistance, pidOutput, roadStatus));
+            Log.d(TAG, String.format("道路检测 - 距离: %.1f, 状态: %s", 
+                roadDistance, roadStatus));
         } else {
             roadDistance = 0.0;
-            pidOutput = 0.0;
             roadStatus = "未检测";
         }
     }
@@ -606,13 +586,12 @@ public class CameraDetectionService extends Service {
         
         // 更新道路检测结果
         dataManager.setRoadDistance(roadDistance);
-        dataManager.setPidOutput(pidOutput);
         dataManager.setRoadStatus(roadStatus);
         
         // 更新检测状态
         dataManager.setDetectionActive(isDetecting);
         
-        Log.d(TAG, String.format("数据已更新到DataManager - 距离: %.1f, PID: %.1f, 状态: %s", 
-            roadDistance, pidOutput, roadStatus));
+        Log.d(TAG, String.format("数据已更新到DataManager - 距离: %.1f, 状态: %s", 
+            roadDistance, roadStatus));
     }
 }

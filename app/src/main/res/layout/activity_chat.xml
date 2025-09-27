@@ -874,14 +874,32 @@
                 android:orientation="vertical"
                 android:padding="16dp">
 
-                <TextView
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:text="📷 图像检测信息"
-                    android:textSize="16sp"
-                    android:textStyle="bold"
-                    android:textColor="#333333"
-                    android:layout_marginBottom="12dp" />
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="12dp">
+
+                    <TextView
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="📷 图像检测信息"
+                        android:textSize="16sp"
+                        android:textStyle="bold"
+                        android:textColor="#333333" />
+
+                    <Switch
+                        android:id="@+id/switchImageDetection"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="8dp"
+                        android:checked="false"
+                        android:thumbTint="#667eea"
+                        android:trackTint="#E0E0E0" />
+
+                </LinearLayout>
 
                 <!-- 检测信息显示框 -->
                 <LinearLayout
@@ -903,7 +921,7 @@
                             android:layout_width="0dp"
                             android:layout_height="wrap_content"
                             android:layout_weight="1"
-                            android:text="🎯 PID:"
+                            android:text="🎯 距离右侧车道线距离"
                             android:textSize="14sp"
                             android:textColor="#666666" />
 
@@ -911,7 +929,7 @@
                             android:id="@+id/tvDetectionStatus"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="等待PID参数..."
+                            android:text="等待距离参数..."
                             android:textSize="14sp"
                             android:textStyle="bold"
                             android:textColor="#2196F3"

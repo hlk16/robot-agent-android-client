@@ -75,6 +75,14 @@ public class ConnectedThread extends Thread{
             }else if (VoiceCallActivity.order == 'g') {
                 btWriteString("g");
                 VoiceCallActivity.order = 'x';
+            }
+            
+            // 检查是否有距离值需要发送
+            if (VoiceCallActivity.roadDistance != 0.0) {
+                String distanceString = "DISTANCE:" + VoiceCallActivity.roadDistance;
+                btWriteString(distanceString);
+                Log.d("Bluetooth", "发送距离右侧车道线距离: " + VoiceCallActivity.roadDistance);
+                VoiceCallActivity.roadDistance = 0.0; // 发送后重置为0
             }else if (VoiceCallActivity.order == 'f') {
                 btWriteString("f");
                 VoiceCallActivity.order = 'x';
@@ -87,28 +95,6 @@ public class ConnectedThread extends Thread{
         }
     }
 
-
-
-//软件自身有一个opencv识别人脸功能，通过识别图像中的坐标点，将信号通过蓝牙发送给硬件
-//    public void run() {
-//        super.run();
-//        while (isRunning) {
-//            try {
-//                if (MainActivity.x != null && MainActivity.y != null) {
-//                    lastX = MainActivity.x.getText().toString();
-//                    lastY = MainActivity.y.getText().toString();
-//                    btWriteString("水平:" + lastX + "\n" + "垂直:" + lastY + "\n");
-//                    btWriteString("你好"+"\n");
-//                } else {
-//                    lastX = "500";
-//                    lastY = "300";
-//                }
-//                Thread.sleep(1000); // 每秒发送一次数据
-//            } catch (InterruptedException e) {
-//                e.printStackTrace();
-//            }
-//        }
-//    }
 
 
     public void btWriteInt(int[] intData){
