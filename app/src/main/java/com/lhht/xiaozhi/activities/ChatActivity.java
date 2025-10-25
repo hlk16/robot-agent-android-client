@@ -1398,8 +1398,56 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             public void onServiceDisconnected() {
                 runOnUiThread(() -> {
                     Log.d(TAG, "导航服务已断开");
+                    String disconnectedMessage = "导航服务已断开连接";
+                    // 将断开连接信息添加到聊天窗口
+                    addMessage("导航系统", disconnectedMessage, getCurrentTime());
                     stopNavigationUpdates();
                     clearNavigationInfo();
+                });
+            }
+            
+            @Override
+            public void onReconnecting(int currentAttempt, int maxAttempts) {
+                runOnUiThread(() -> {
+                    Log.d(TAG, "导航服务重连中... (" + currentAttempt + "/" + maxAttempts + ")");
+                    String reconnectingMessage = "导航服务重连中... (" + currentAttempt + "/" + maxAttempts + ")";
+                    Toast.makeText(ChatActivity.this, reconnectingMessage, Toast.LENGTH_SHORT).show();
+                    // 将重连信息添加到聊天窗口
+                    addMessage("导航系统", reconnectingMessage, getCurrentTime());
+                });
+            }
+
+            @Override
+            public void onReconnectFailed(int totalAttempts) {
+                runOnUiThread(() -> {
+                    Log.e(TAG, "导航服务重连失败，总尝试次数: " + totalAttempts);
+                    String failureMessage = "导航服务重连失败，已尝试 " + totalAttempts + " 次";
+                    Toast.makeText(ChatActivity.this, failureMessage, Toast.LENGTH_LONG).show();
+                    // 将失败信息添加到聊天窗口
+                    addMessage("导航系统", failureMessage, getCurrentTime());
+                });
+            }
+
+            @Override
+            public void onReconnectSuccess(int attempts) {
+                runOnUiThread(() -> {
+                    Log.i(TAG, "导航服务重连成功，尝试次数: " + attempts);
+                    String successMessage = "导航服务重连成功，尝试了 " + attempts + " 次";
+                    Toast.makeText(ChatActivity.this, successMessage, Toast.LENGTH_SHORT).show();
+                    // 将成功信息添加到聊天窗口
+                    addMessage("导航系统", successMessage, getCurrentTime());
+                });
+            }
+
+            @Override
+            public void onConnectionLost() {
+                runOnUiThread(() -> {
+                    Log.w(TAG, "导航服务连接丢失");
+                    String lostMessage = "导航服务连接丢失，正在尝试重连...";
+                    Toast.makeText(ChatActivity.this, lostMessage, Toast.LENGTH_SHORT).show();
+                    // 将连接丢失信息添加到聊天窗口
+                    addMessage("导航系统", lostMessage, getCurrentTime());
+                    stopNavigationUpdates();
                 });
             }
         });
@@ -1560,8 +1608,18 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
      * 更新导航信息显示
      */
     private void updateNavigationInfo() {
+        // 首先检查服务连接状态
         if (!navigationServiceManager.isServiceConnected()) {
-            Log.w(TAG, "导航服务未连接，停止更新");
+            String connectionStatus = navigationServiceManager.getConnectionStatus();
+            String detailedStatus = navigationServiceManager.getDetailedConnectionStatus();
+            
+            Log.w(TAG, "导航服务未连接，停止更新 - 状态: " + connectionStatus);
+            Log.w(TAG, "详细连接状态: " + detailedStatus);
+            
+            // 显示详细的连接失败原因
+            Toast.makeText(this, "导航失败：服务未连接 - " + connectionStatus, Toast.LENGTH_LONG).show();
+            addMessage("导航调试", "服务连接失败: " + connectionStatus, getCurrentTime());
+            addMessage("导航调试", detailedStatus, getCurrentTime());
             return;
         }
         
@@ -1573,17 +1631,22 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             boolean isNavigating = navigationServiceManager.isNavigating();
             
             // 检查导航服务的详细状态
+            android.location.Location currentLoc = null;
             if (navigationServiceManager.getNavigationService() != null) {
-                android.location.Location currentLoc = navigationServiceManager.getNavigationService().getCurrentLocation();
+                currentLoc = navigationServiceManager.getNavigationService().getCurrentLocation();
                 Log.d(TAG, "当前位置: " + (currentLoc != null ? 
                     currentLoc.getLatitude() + "," + currentLoc.getLongitude() : "null"));
             }
             
-            Log.d(TAG, "导航信息更新 - 距离: " + distanceToDestination + 
-                  "m, 方向: " + currentDirection + ", 下一转向: " + distanceToNext + "m, 导航状态: " + isNavigating);
-            
+            // 详细的状态调试信息
+            String statusDebug = String.format("导航状态检查 - isNavigating: %s, 距离: %d, 方向: %s, 下一转向: %d, 当前位置: %s", 
+                isNavigating, distanceToDestination, currentDirection, distanceToNext, 
+                currentLoc != null ? (currentLoc.getLatitude() + "," + currentLoc.getLongitude()) : "null");
+            Log.d(TAG, statusDebug);
+
             if (isNavigating && distanceToDestination > 0) {
                 // 更新UI
+                etMessage.setText("成功导航");
                 tvDestinationDistance.setText(NavigationServiceManager.formatDistance(distanceToDestination));
                 tvCurrentDirection.setText(currentDirection);
                 tvNextTurnDistance.setText(NavigationServiceManager.formatDistance(distanceToNext));
@@ -1618,25 +1681,75 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 }
             } else {
                 // 导航结束或无效数据，停止更新
-                String reason = isNavigating ? "距离无效(" + distanceToDestination + ")" : "导航未启动";
-                etMessage.setText("位置未到可导航点，请遥控到可导航区域重启导航");
-                sendChatMessage();
+                String reason;
+                String detailedReason;
+                String specificError = "";
+                
+                // 获取腾讯地图的具体错误信息
+                if (navigationServiceManager != null) {
+                    specificError = navigationServiceManager.getLastNavigationError();
+                }
+                
+                if (!isNavigating) {
+                    reason = "导航未启动";
+                    // 优先显示腾讯地图的具体错误信息
+                    if (specificError != null && !specificError.isEmpty() && !specificError.equals("导航服务未连接")) {
+                        detailedReason = "导航未启动 - 腾讯地图错误：" + specificError;
+                        Toast.makeText(this, "导航失败：" + specificError, Toast.LENGTH_LONG).show();
+                    } else {
+                        // 检查可能的原因
+                        if (currentLoc == null) {
+                            detailedReason = "导航未启动 - 原因：当前位置未获取到，可能是GPS信号弱或定位服务异常";
+                            Toast.makeText(this, "导航失败：无法获取当前位置，请检查GPS信号和定位服务", Toast.LENGTH_LONG).show();
+                        } else {
+                            detailedReason = "导航未启动 - 原因：导航服务状态异常，可能是路线规划失败或目的地无效";
+                            Toast.makeText(this, "导航失败：导航服务异常，请重新启动导航", Toast.LENGTH_LONG).show();
+                        }
+                    }
+                } else {
+                    reason = "距离无效(" + distanceToDestination + ")";
+                    // 优先显示腾讯地图的具体错误信息
+                    if (specificError != null && !specificError.isEmpty() && !specificError.equals("导航服务未连接")) {
+                        detailedReason = "导航中但距离无效 - 腾讯地图错误：" + specificError;
+                        Toast.makeText(this, "导航异常：" + specificError, Toast.LENGTH_LONG).show();
+                    } else {
+                        detailedReason = "导航中但距离无效 - 原因：可能是导航数据更新异常或已偏离路线";
+                        Toast.makeText(this, "导航异常：距离数据无效(" + distanceToDestination + ")，请重新规划路线", Toast.LENGTH_LONG).show();
+                    }
+                }
+                
+                String debugInfo = String.format("导航失败调试信息 - 状态: %s, 距离: %d, 方向: %s, 下一转向: %d, 位置: %s, 腾讯地图错误: %s", 
+                    isNavigating ? "导航中" : "未导航", distanceToDestination, currentDirection, distanceToNext,
+                    currentLoc != null ? (currentLoc.getLatitude() + "," + currentLoc.getLongitude()) : "null",
+                    specificError != null ? specificError : "无");
+                
                 Log.d(TAG, "停止更新导航信息 - 原因: " + reason);
+                Log.d(TAG, detailedReason);
+                Log.d(TAG, debugInfo);
+                
+                // 将调试信息添加到聊天窗口
+                addMessage("导航调试", reason, getCurrentTime());
+                addMessage("导航调试", detailedReason, getCurrentTime());
+                addMessage("导航调试", debugInfo, getCurrentTime());
+                
                 stopNavigationUpdates();
                 clearNavigationInfo();
                 
                 if (isNavigationUpdating) {
                     // 根据具体原因发送不同的消息
                     if (!isNavigating) {
-                        Toast.makeText(this, "导航服务异常，导航已停止", Toast.LENGTH_SHORT).show();
                         // 发送导航失败消息到聊天
-                        etMessage.setText("导航失败：导航服务异常，请重新启动导航");
+                        String failureMessage = "导航失败：" + detailedReason;
+                        addMessage("导航系统", failureMessage, getCurrentTime());
+                        etMessage.setText(failureMessage);
                         sendChatMessage();
                         etMessage.setText("");
                     } else if (distanceToDestination <= 0) {
                         Toast.makeText(this, "导航数据异常，导航已停止", Toast.LENGTH_SHORT).show();
                         // 发送导航失败消息到聊天
-                        etMessage.setText("导航失败：无法获取有效的导航数据，请检查GPS信号");
+                        String failureMessage = "导航失败：无法获取有效的导航数据，请检查GPS信号";
+                        addMessage("导航系统", failureMessage, getCurrentTime());
+                        etMessage.setText(failureMessage);
                         sendChatMessage();
                         etMessage.setText("");
                     } else {

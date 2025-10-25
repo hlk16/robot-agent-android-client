@@ -42,9 +42,9 @@
         <activity
             android:name=".activities.SearchNaviActivity"
             android:exported="false" />
-        <activity
-            android:name=".activities.video"
-            android:exported="false" />
+<!--        <activity-->
+<!--            android:name=".activities.video"-->
+<!--            android:exported="false" />-->
         <activity
             android:name=".activities.ChatActivity"
             android:exported="false" />
@@ -59,9 +59,9 @@
             android:name="TencentMapSDK"
             android:value="XIZBZ-KKKLW-PFLRJ-YVMLV-3JANQ-XLF4U" />
 
-        <activity
-            android:name=".activities.DroneActivity"
-            android:exported="false" />
+<!--        <activity-->
+<!--            android:name=".activities.DroneActivity"-->
+<!--            android:exported="false" />-->
         <activity
             android:name=".activities.NBIOTActivity"
             android:exported="false" />

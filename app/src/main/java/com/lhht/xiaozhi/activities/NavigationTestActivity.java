@@ -78,6 +78,43 @@ public class NavigationTestActivity extends AppCompatActivity {
                     Toast.makeText(NavigationTestActivity.this, "导航服务已断开", Toast.LENGTH_SHORT).show();
                 });
             }
+            
+            @Override
+            public void onReconnecting(int currentAttempt, int maxAttempts) {
+                runOnUiThread(() -> {
+                    tvServiceStatus.setText("服务状态: 重连中... (" + currentAttempt + "/" + maxAttempts + ")");
+                    Toast.makeText(NavigationTestActivity.this, "导航服务重连中... (" + currentAttempt + "/" + maxAttempts + ")", Toast.LENGTH_SHORT).show();
+                });
+            }
+            
+            @Override
+            public void onReconnectFailed(int totalAttempts) {
+                runOnUiThread(() -> {
+                    tvServiceStatus.setText("服务状态: 重连失败");
+                    btnStartNavigation.setEnabled(false);
+                    stopUpdatingNavigationInfo();
+                    Toast.makeText(NavigationTestActivity.this, "导航服务重连失败，已尝试 " + totalAttempts + " 次", Toast.LENGTH_LONG).show();
+                });
+            }
+            
+            @Override
+            public void onReconnectSuccess(int attempts) {
+                runOnUiThread(() -> {
+                    tvServiceStatus.setText("服务状态: 重连成功");
+                    btnStartNavigation.setEnabled(true);
+                    Toast.makeText(NavigationTestActivity.this, "导航服务重连成功，尝试了 " + attempts + " 次", Toast.LENGTH_SHORT).show();
+                });
+            }
+            
+            @Override
+            public void onConnectionLost() {
+                runOnUiThread(() -> {
+                    tvServiceStatus.setText("服务状态: 连接丢失");
+                    btnStartNavigation.setEnabled(false);
+                    stopUpdatingNavigationInfo();
+                    Toast.makeText(NavigationTestActivity.this, "导航服务连接丢失", Toast.LENGTH_SHORT).show();
+                });
+            }
         });
         
         // 初始化更新处理器

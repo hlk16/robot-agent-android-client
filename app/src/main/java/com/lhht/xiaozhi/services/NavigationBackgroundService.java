@@ -57,6 +57,9 @@ public class NavigationBackgroundService extends Service {
     private boolean isNavigating = false;
     private NavigationData currentNaviData;
     
+    // 错误信息存储
+    private String lastNavigationError = null;
+    
     // Binder用于与Activity通信
     private final IBinder binder = new NavigationBinder();
     
@@ -85,6 +88,9 @@ public class NavigationBackgroundService extends Service {
         
         // 创建通知渠道
         createNotificationChannel();
+        
+        // 启动位置更新以确保currentLocation不为null
+        startContinuousLocationUpdates();
     }
     
     @Override
@@ -444,6 +450,9 @@ public class NavigationBackgroundService extends Service {
                     Log.e(TAG, "路线计算失败: 错误码=" + calcRouteResult.getErrorCode() + " " + errorMsg);
                     updateNotification("路线计算失败: " + errorMsg);
                     
+                    // 保存错误信息
+                    lastNavigationError = "路线计算失败: " + errorMsg;
+                    
                     // 特别处理不同类型的错误
                     int errorCode = calcRouteResult.getErrorCode();
                     if (errorCode == -1 || errorMsg.contains("可导航区域")) {
@@ -475,13 +484,19 @@ public class NavigationBackgroundService extends Service {
                         try {
                             naviManager.startNavi(0);
                             updateNotification("导航启动成功 - 距离" + route.getDistance() + "米");
+                            // 清除之前的错误信息
+                            lastNavigationError = null;
                         } catch (Exception e) {
                             Log.e(TAG, "启动导航失败: " + e.getMessage());
                             updateNotification("导航启动失败: " + e.getMessage());
+                            // 保存错误信息
+                            lastNavigationError = "导航启动失败: " + e.getMessage();
                         }
                     } else {
                         Log.w(TAG, "没有找到可用路线");
                         updateNotification("没有找到可用路线");
+                        // 保存错误信息
+                        lastNavigationError = "没有找到可用路线";
                     }
                 }
 
@@ -490,6 +505,9 @@ public class NavigationBackgroundService extends Service {
                     String detailedErrorMsg = getRouteSearchErrorMessage(errorCode, errorMsg);
                     Log.e(TAG, "路线规划失败: 错误码=" + errorCode + " " + detailedErrorMsg);
                     updateNotification("路线规划失败: " + detailedErrorMsg);
+                    
+                    // 保存错误信息
+                    lastNavigationError = "路线规划失败: " + detailedErrorMsg;
                     
                     // 特别处理不同类型的错误
                     if (errorCode == -1 || errorMsg.contains("可导航区域") || detailedErrorMsg.contains("可导航区域")) {
@@ -516,6 +534,8 @@ public class NavigationBackgroundService extends Service {
         } catch (Exception e) {
             Log.e(TAG, "路线规划异常: " + e.getMessage());
             updateNotification("路线规划异常: " + e.getMessage());
+            // 保存错误信息
+            lastNavigationError = "路线规划异常: " + e.getMessage();
         }
     }
     
@@ -687,6 +707,13 @@ public class NavigationBackgroundService extends Service {
      */
     public Location getCurrentLocation() {
         return currentLocation;
+    }
+    
+    /**
+     * 获取最后的导航错误信息
+     */
+    public String getLastNavigationError() {
+        return lastNavigationError;
     }
     
     /**
