@@ -75,6 +75,12 @@ public class ConnectedThread extends Thread{
             }else if (VoiceCallActivity.order == 'g') {
                 btWriteString("g");
                 VoiceCallActivity.order = 'x';
+            }else if (VoiceCallActivity.order == 'h') {
+                btWriteString("h");
+                VoiceCallActivity.order = 'x';
+            }else if (VoiceCallActivity.order == 'i') {
+                btWriteString("i");
+                VoiceCallActivity.order = 'x';
             }
             
             // 检查是否有距离值需要发送
@@ -83,12 +89,6 @@ public class ConnectedThread extends Thread{
                 btWriteString(distanceString);
                 Log.d("Bluetooth", "发送距离右侧车道线距离: " + VoiceCallActivity.roadDistance);
                 VoiceCallActivity.roadDistance = 0.0; // 发送后重置为0
-            }else if (VoiceCallActivity.order == 'f') {
-                btWriteString("f");
-                VoiceCallActivity.order = 'x';
-            }else if (VoiceCallActivity.order == 'g') {
-                btWriteString("g");
-                VoiceCallActivity.order = 'x';
             }
 
 

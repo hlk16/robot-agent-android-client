@@ -705,20 +705,27 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 order='e';
                 Toast.makeText(this, "发送停止", Toast.LENGTH_SHORT).show();
             }
-             else if(text != null && text.contains("左手伸出来") ) {
-                order='f';
-                Toast.makeText(this, "伸左手", Toast.LENGTH_SHORT).show();
-            }else if(text != null && text.contains("右手伸出来") ) {
-                order='g';
-                Toast.makeText(this, "伸右手", Toast.LENGTH_SHORT).show();
-            } else if (text != null && text.contains("帮我取快递") )  {
-
-
+             else if (text != null && text.contains("帮我取快递") )  {
                 Toast.makeText(VoiceCallActivity.this, "正在打开远程导航页面", Toast.LENGTH_SHORT).show();
                 Intent intent = new Intent(VoiceCallActivity.this, ChatActivity.class);
                 startActivity(intent);
-
             }
+            // // 检测关键词"哈喽"
+            // else if (text.contains("你好")) {
+            //     Toast.makeText(this, "哈喽哈喽", Toast.LENGTH_SHORT).show();
+            //     order = 'f';
+            // }
+            // else if (text.contains("展示抱拳")) {
+            //     Toast.makeText(this, "展示拳法", Toast.LENGTH_SHORT).show();
+            //     order = 'g';
+            // }
+            // // 检测关键词"展示功夫"
+            // else if (text.contains("展示功夫")) {
+            //     Log.d("VoiceCall", "检测到展示功夫指令: " + text);
+            //     Toast.makeText(this, "展示功夫", Toast.LENGTH_SHORT).show();
+            //     order = 'i';
+            // }
+
 
         });
     }
@@ -823,6 +830,27 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                     String cleanText = parts[1];
 
                     updateAiMessage(cleanText);
+
+                    // 检测关键词"哈喽"
+                    if (text.contains("你好")) {
+                        Toast.makeText(this, "哈喽哈喽", Toast.LENGTH_SHORT).show();
+                        order = 'f';
+                    }
+                    else if (text.matches(".*展示.*抱拳.*")) {
+                        Toast.makeText(this, "展示拳法", Toast.LENGTH_SHORT).show();
+                        order = 'g';
+                    }
+                    // 检测关键词"展示功夫"
+                    else if (text.matches(".*展示.*功夫.*")) {
+                        Log.d("VoiceCall", "检测到展示功夫指令: " + text);
+                        Toast.makeText(this, "展示功夫", Toast.LENGTH_SHORT).show();
+                        order = 'i';
+                    }
+                    // 检测关键词"给你鼓掌"
+                    else if (text.matches(".*给.*鼓掌.*")) {
+                        Toast.makeText(this, "给你鼓掌", Toast.LENGTH_SHORT).show();
+                        order = 'h';
+                    }
 
                     if (!emoji.isEmpty()) {
                         showEmoji(emoji);
