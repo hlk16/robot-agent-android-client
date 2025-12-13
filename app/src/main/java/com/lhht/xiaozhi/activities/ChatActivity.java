@@ -21,6 +21,14 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import android.view.Choreographer;
+import android.os.Build;
+import android.app.ActivityManager;
+import android.content.Context;
+import android.os.Debug;
+import android.view.Display;
+import android.view.WindowManager;
+
 import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.activities.webrtc.SignalingClient;
 import com.lhht.xiaozhi.activities.webrtc.WebRTCManager;
@@ -55,6 +63,12 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
     private static final String TAG = "ChatActivity";
     private static final int PERMISSION_REQUEST_CODE = 1001;
+    
+    // 性能监控相关
+    private PerformanceMonitor performanceMonitor;
+    private long lastFrameTimeNanos = 0;
+    private long frameCount = 0;
+    private long fpsUpdateTimeNanos = 0;
     
     private EditText etUserId, etNickname, etTargetUser, etMessage, etRoomId, etServerUrl, etWebrtcServerUrl;
     private TextView tvStatus, tvOnlineUsers, tvMessages;
@@ -103,6 +117,119 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private double destinationLat = 0.0;
     private double destinationLng = 0.0;
     private boolean hasDestinationCoordinates = false;
+    
+    // 性能监控类
+    private static class PerformanceMonitor {
+        private Choreographer.FrameCallback frameCallback;
+        private long lastFrameTimeNanos = 0;
+        private long frameCount = 0;
+        private long fpsUpdateTimeNanos = 0;
+        private float currentFPS = 0;
+        private boolean isMonitoring = false;
+        private final ChatActivity activity;
+        private Handler handler;
+        
+        public PerformanceMonitor(ChatActivity activity) {
+            this.activity = activity;
+            this.handler = new Handler(Looper.getMainLooper());
+        }
+        
+        public void startMonitoring() {
+            if (isMonitoring) return;
+            
+            isMonitoring = true;
+            lastFrameTimeNanos = System.nanoTime();
+            fpsUpdateTimeNanos = lastFrameTimeNanos;
+            frameCount = 0;
+            
+            frameCallback = new Choreographer.FrameCallback() {
+                @Override
+                public void doFrame(long frameTimeNanos) {
+                    if (!isMonitoring) return;
+                    
+                    frameCount++;
+                    
+                    // 每秒更新一次FPS
+                    long elapsedNanos = frameTimeNanos - fpsUpdateTimeNanos;
+                    if (elapsedNanos >= 1_000_000_000) { // 1秒
+                        currentFPS = (frameCount * 1_000_000_000.0f) / elapsedNanos;
+                        frameCount = 0;
+                        fpsUpdateTimeNanos = frameTimeNanos;
+                        
+                        // 在主线程中记录FPS和其他性能指标
+                        handler.post(() -> {
+                            logPerformanceMetrics(frameTimeNanos);
+                        });
+                    }
+                    
+                    lastFrameTimeNanos = frameTimeNanos;
+                    
+                    // 注册下一帧
+                    Choreographer.getInstance().postFrameCallback(this);
+                }
+            };
+            
+            Choreographer.getInstance().postFrameCallback(frameCallback);
+            Log.d("ChatPerformanceMonitor", "性能监控已启动");
+        }
+        
+        public void stopMonitoring() {
+            if (!isMonitoring) return;
+            isMonitoring = false;
+            
+            if (frameCallback != null) {
+                Choreographer.getInstance().removeFrameCallback(frameCallback);
+            }
+            
+            Log.d("ChatPerformanceMonitor", "性能监控已停止");
+        }
+        
+        private void logPerformanceMetrics(long frameTimeNanos) {
+            // 记录FPS
+            Log.d("ChatPerformanceMonitor", String.format("当前FPS: %.2f", currentFPS));
+            
+            // 记录内存使用情况
+            ActivityManager activityManager = (ActivityManager) activity.getSystemService(Context.ACTIVITY_SERVICE);
+            ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+            activityManager.getMemoryInfo(memoryInfo);
+            
+            // 获取应用内存使用
+            Runtime runtime = Runtime.getRuntime();
+            long usedMemory = runtime.totalMemory() - runtime.freeMemory();
+            long maxMemory = runtime.maxMemory();
+            float memoryUsagePercent = (usedMemory * 100.0f) / maxMemory;
+            
+            Log.d("ChatPerformanceMonitor", String.format("内存使用: %dMB / %dMB (%.1f%%)", 
+                usedMemory / (1024 * 1024), maxMemory / (1024 * 1024), memoryUsagePercent));
+            
+            // 记录系统可用内存
+            Log.d("ChatPerformanceMonitor", String.format("系统可用内存: %dMB", 
+                memoryInfo.availMem / (1024 * 1024)));
+            
+            // 记录屏幕刷新率（如果API 23+）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                WindowManager wm = (WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
+                Display display = wm.getDefaultDisplay();
+                if (display != null) {
+                    float refreshRate = display.getRefreshRate();
+                    Log.d("ChatPerformanceMonitor", String.format("屏幕刷新率: %.1f Hz", refreshRate));
+                }
+            }
+            
+            // 记录应用是否处于低内存状态
+            if (memoryInfo.lowMemory) {
+                Log.w("ChatPerformanceMonitor", "系统处于低内存状态");
+            }
+        }
+        
+        public float getCurrentFPS() {
+            return currentFPS;
+        }
+        
+        public boolean isMonitoring() {
+            return isMonitoring;
+        }
+    }
 
     // 真机测试配置 - 根据您的网络信息配置
     private static final String SERVER_URL = "ws://192.168.0.102:8009/ws/chat/"; // 真机测试地址
@@ -122,6 +249,10 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         checkPermissions();
 
         mainHandler = new Handler(Looper.getMainLooper());
+        
+        // 初始化性能监控
+        performanceMonitor = new PerformanceMonitor(this);
+        performanceMonitor.startMonitoring();
         
         // 生成唯一的客户端ID
         clientId = "client_" + UUID.randomUUID().toString().substring(0, 8);
@@ -1332,8 +1463,32 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     // WebRTC相关方法结束
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        // 停止性能监控
+        if (performanceMonitor != null) {
+            performanceMonitor.stopMonitoring();
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 重新启动性能监控
+        if (performanceMonitor != null) {
+            performanceMonitor.startMonitoring();
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
+        
+        // 停止性能监控
+        if (performanceMonitor != null) {
+            performanceMonitor.stopMonitoring();
+        }
+        
         disconnect();
         if (client != null) {
             client.dispatcher().executorService().shutdown();
