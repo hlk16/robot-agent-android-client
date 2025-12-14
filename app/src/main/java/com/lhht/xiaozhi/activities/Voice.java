@@ -49,9 +49,23 @@ import android.content.pm.PackageManager;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 
+import android.view.Choreographer;
+import android.os.Build;
+import android.app.ActivityManager;
+import android.content.Context;
+import android.os.Debug;
+import android.view.Display;
+import android.view.WindowManager;
+
 public class Voice extends AppCompatActivity implements WebSocketManager.WebSocketListener {
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
     private VideoView videoView;
+    
+    // 性能监控相关
+    private PerformanceMonitor performanceMonitor;
+    private long lastFrameTimeNanos = 0;
+    private long frameCount = 0;
+    private long fpsUpdateTimeNanos = 0;
     //音频录制参数Vertex16000
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
@@ -110,6 +124,119 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     // 回声消除和噪声抑制
     private AcousticEchoCanceler echoCanceler;
     private NoiseSuppressor noiseSuppressor;
+    
+    // 性能监控类
+    private static class PerformanceMonitor {
+        private Choreographer.FrameCallback frameCallback;
+        private long lastFrameTimeNanos = 0;
+        private long frameCount = 0;
+        private long fpsUpdateTimeNanos = 0;
+        private float currentFPS = 0;
+        private boolean isMonitoring = false;
+        private final Voice activity;
+        private Handler handler;
+        
+        public PerformanceMonitor(Voice activity) {
+            this.activity = activity;
+            this.handler = new Handler(Looper.getMainLooper());
+        }
+        
+        public void startMonitoring() {
+            if (isMonitoring) return;
+            
+            isMonitoring = true;
+            lastFrameTimeNanos = System.nanoTime();
+            fpsUpdateTimeNanos = lastFrameTimeNanos;
+            frameCount = 0;
+            
+            frameCallback = new Choreographer.FrameCallback() {
+                @Override
+                public void doFrame(long frameTimeNanos) {
+                    if (!isMonitoring) return;
+                    
+                    frameCount++;
+                    
+                    // 每秒更新一次FPS
+                    long elapsedNanos = frameTimeNanos - fpsUpdateTimeNanos;
+                    if (elapsedNanos >= 1_000_000_000) { // 1秒
+                        currentFPS = (frameCount * 1_000_000_000.0f) / elapsedNanos;
+                        frameCount = 0;
+                        fpsUpdateTimeNanos = frameTimeNanos;
+                        
+                        // 在主线程中记录FPS和其他性能指标
+                        handler.post(() -> {
+                            logPerformanceMetrics(frameTimeNanos);
+                        });
+                    }
+                    
+                    lastFrameTimeNanos = frameTimeNanos;
+                    
+                    // 注册下一帧
+                    Choreographer.getInstance().postFrameCallback(this);
+                }
+            };
+            
+            Choreographer.getInstance().postFrameCallback(frameCallback);
+            Log.d("VoicePerformanceMonitor", "性能监控已启动");
+        }
+        
+        public void stopMonitoring() {
+            if (!isMonitoring) return;
+            isMonitoring = false;
+            
+            if (frameCallback != null) {
+                Choreographer.getInstance().removeFrameCallback(frameCallback);
+            }
+            
+            Log.d("VoicePerformanceMonitor", "性能监控已停止");
+        }
+        
+        private void logPerformanceMetrics(long frameTimeNanos) {
+            // 记录FPS
+            Log.d("VoicePerformanceMonitor", String.format("当前FPS: %.2f", currentFPS));
+            
+            // 记录内存使用情况
+            ActivityManager activityManager = (ActivityManager) activity.getSystemService(Context.ACTIVITY_SERVICE);
+            ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
+            activityManager.getMemoryInfo(memoryInfo);
+            
+            // 获取应用内存使用
+            Runtime runtime = Runtime.getRuntime();
+            long usedMemory = runtime.totalMemory() - runtime.freeMemory();
+            long maxMemory = runtime.maxMemory();
+            float memoryUsagePercent = (usedMemory * 100.0f) / maxMemory;
+            
+            Log.d("VoicePerformanceMonitor", String.format("内存使用: %dMB / %dMB (%.1f%%)", 
+                usedMemory / (1024 * 1024), maxMemory / (1024 * 1024), memoryUsagePercent));
+            
+            // 记录系统可用内存
+            Log.d("VoicePerformanceMonitor", String.format("系统可用内存: %dMB", 
+                memoryInfo.availMem / (1024 * 1024)));
+            
+            // 记录屏幕刷新率（如果API 23+）
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                WindowManager wm = (WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
+                Display display = wm.getDefaultDisplay();
+                if (display != null) {
+                    float refreshRate = display.getRefreshRate();
+                    Log.d("VoicePerformanceMonitor", String.format("屏幕刷新率: %.1f Hz", refreshRate));
+                }
+            }
+            
+            // 记录应用是否处于低内存状态
+            if (memoryInfo.lowMemory) {
+                Log.w("VoicePerformanceMonitor", "系统处于低内存状态");
+            }
+        }
+        
+        public float getCurrentFPS() {
+            return currentFPS;
+        }
+        
+        public boolean isMonitoring() {
+            return isMonitoring;
+        }
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -123,6 +250,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         );
 
         setContentView(R.layout.activity_voice);
+        
+        // 初始化性能监控
+        performanceMonitor = new PerformanceMonitor(this);
+        performanceMonitor.startMonitoring();
         
         // 初始化图像识别管理器
 
@@ -875,6 +1006,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        
+        // 停止性能监控
+        if (performanceMonitor != null) {
+            performanceMonitor.stopMonitoring();
+        }
+        
         if (webSocketManager != null) {
             try {
                 JSONObject endMessage = new JSONObject();
@@ -1030,6 +1167,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     @Override
     protected void onPause() {
         super.onPause();
+        
+        // 停止性能监控
+        if (performanceMonitor != null) {
+            performanceMonitor.stopMonitoring();
+        }
+        
         if (videoView != null && videoView.isPlaying()) {
             videoView.pause();
         }
@@ -1053,6 +1196,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     @Override
     protected void onResume() {
         super.onResume();
+        
+        // 重新启动性能监控
+        if (performanceMonitor != null) {
+            performanceMonitor.startMonitoring();
+        }
+        
         if (videoView != null && !videoView.isPlaying()) {
             videoView.start();
         }
