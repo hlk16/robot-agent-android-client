@@ -75,3 +75,4 @@ lint/tmp/
 # Xiaozhi SDK folders
 xiaozhi.sdk/
 xiaozhi.sdk.main/
+/参考demo

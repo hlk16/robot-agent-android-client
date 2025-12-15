@@ -121,6 +121,14 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private ImageRecognitionManager imageRecognitionManager;
     private boolean isVideoUnderstanding = false; // 标识是否正在进行视频理解
     
+    // 用于计算端到端延迟的时间记录
+    private long lastAudioUploadTime = 0;
+    private long lastLogTime = 0;
+    private long speechStartTime = 0; // 记录用户开始说话的时间
+//    private int frameCount = 0;
+    private long totalLatencySum = 0;
+    private int latencySampleCount = 0;
+    
     // 回声消除和噪声抑制
     private AcousticEchoCanceler echoCanceler;
     private NoiseSuppressor noiseSuppressor;
@@ -556,6 +564,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private void sendAudioData(byte[] data, int size) {
         if (webSocketManager != null && webSocketManager.isConnected()) {
             try {
+                // 记录音频上传开始时间
+                long uploadStartTime = System.currentTimeMillis();
+                // 记录这次上传时间用于计算端到端延迟
+                lastAudioUploadTime = uploadStartTime;
+                Log.d("VoiceCall-Audio", "开始上传音频数据: " + size + " bytes, 时间戳: " + uploadStartTime);
+                
                 // 将byte[]转换为short[]
                 short[] samples = new short[size / 2];
                 for (int i = 0; i < samples.length; i++) {
@@ -569,7 +583,17 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     // 直接发送编码后的音频数据
                     byte[] encodedBytes = new byte[encodedSize];
                     System.arraycopy(encodedData, 0, encodedBytes, 0, encodedSize);
+                    
+                    // 记录编码完成时间
+                    long encodeTime = System.currentTimeMillis();
+                    Log.d("VoiceCall-Audio", "音频编码完成: 原始" + size + " bytes -> 编码后" + encodedSize + " bytes, 耗时: " + (encodeTime - uploadStartTime) + "ms");
+                    
+                    // 发送音频数据
                     webSocketManager.sendBinaryMessage(encodedBytes);
+                    
+                    // 记录发送完成时间
+                    long sendTime = System.currentTimeMillis();
+                    Log.d("VoiceCall-Audio", "音频数据发送完成, 总耗时: " + (sendTime - uploadStartTime) + "ms");
                 }
             } catch (Exception e) {
                 Log.e("VoiceCall", "发送音频数据失败", e);
@@ -810,23 +834,33 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
     @Override
     public void onConnected() {
+        long connectTime = System.currentTimeMillis();
+        Log.d("VoiceCall-Connection", "WebSocket连接成功, 时间戳: " + connectTime);
         updateCallStatus("已连接");
         startCall();
     }
 
     @Override
     public void onDisconnected() {
+        long disconnectTime = System.currentTimeMillis();
+        Log.d("VoiceCall-Connection", "WebSocket连接断开, 时间戳: " + disconnectTime);
         updateCallStatus("连接已断开");
         endCall();
     }
 
     @Override
     public void onError(String error) {
+        long errorTime = System.currentTimeMillis();
+        Log.e("VoiceCall-Connection", "WebSocket错误: " + error + ", 时间戳: " + errorTime);
         updateCallStatus("错误: " + error);
     }
 
     @Override
     public void onMessage(String message) {
+        // 记录消息接收时间
+        long messageReceiveTime = System.currentTimeMillis();
+        Log.d("VoiceCall-Message", "收到文本消息: " + message + ", 时间戳: " + messageReceiveTime);
+        
         try {
             JSONObject jsonMessage = new JSONObject(message);
             String type = jsonMessage.getString("type");
@@ -835,12 +869,24 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 case "stt":
                     // 处理语音识别结果
                     String recognizedText = jsonMessage.getString("text");
+                    long sttProcessTime = System.currentTimeMillis() - messageReceiveTime;
+                    Log.d("VoiceCall-STT", "语音识别结果: " + recognizedText + ", 处理耗时: " + sttProcessTime + "ms");
+                    
+                    // 如果是有效的语音识别结果（非空且不是噪声），记录说话开始时间
+                    if (recognizedText != null && !recognizedText.trim().isEmpty() && speechStartTime == 0) {
+                        // 这里使用消息接收时间近似作为用户开始说话的时间
+                        speechStartTime = messageReceiveTime;
+                        Log.d("VoiceCall-ResponseTime", "记录用户说话开始时间: " + speechStartTime + "ms (识别文本: '" + recognizedText + "')");
+                    }
+                    
                     updateRecognizedText(recognizedText);
                     // 打断当前音频播放
                     stopCurrentAudio();
                     break;
 
                 case "tts":
+                    long ttsProcessTime = System.currentTimeMillis() - messageReceiveTime;
+                    Log.d("VoiceCall-TTS", "收到TTS消息, 处理耗时: " + ttsProcessTime + "ms");
                     handleTTSMessage(jsonMessage);
                     break;
             }
@@ -874,8 +920,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private void handleTTSMessage(JSONObject message) {
         try {
             String state = message.getString("state");
+            long ttsProcessStart = System.currentTimeMillis();
+            
             switch (state) {
                 case "start":
+                    Log.d("VoiceCall-TTS", "TTS开始, 时间戳: " + ttsProcessStart);
                     stopCurrentAudio();
                     updateCallStatus("AI正在说话...");
                     break;
@@ -885,6 +934,16 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     String[] parts = extractEmojiAndText(text);
                     String emoji = parts[0];
                     String cleanText = parts[1];
+                    long sentenceStartTime = System.currentTimeMillis();
+                    Log.d("VoiceCall-TTS", "TTS句子开始: '" + cleanText + "', 时间戳: " + sentenceStartTime);
+                    
+                    // 计算从用户开始说话到AI开始回复的完整时间
+                    if (speechStartTime > 0) {
+                        long totalResponseTime = sentenceStartTime - speechStartTime;
+                        Log.d("VoiceCall-ResponseTime", "用户说话到AI回复的完整时间: " + totalResponseTime + "ms (回复: '" + cleanText + "')");
+                        // 重置说话时间，避免重复计算
+                        speechStartTime = 0;
+                    }
 
                     updateAiMessage(cleanText);
 
@@ -897,12 +956,15 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     break;
 
                 case "end":
+                    long ttsEndTime = System.currentTimeMillis();
+                    Log.d("VoiceCall-TTS", "TTS结束, 时间戳: " + ttsEndTime + ", 总处理时间: " + (ttsEndTime - ttsProcessStart) + "ms");
                     updateCallStatus("正在通话中...");
                     hideEmoji();
                     break;
 
                 case "error":
                     String error = message.optString("error", "未知错误");
+                    Log.e("VoiceCall-TTS", "TTS错误: " + error + ", 时间戳: " + System.currentTimeMillis());
                     updateCallStatus("TTS错误: " + error);
                     hideEmoji();
                     break;
@@ -960,6 +1022,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             return;
         }
 
+        // 记录音频接收开始时间
+        long receiveStartTime = System.currentTimeMillis();
+        Log.d("VoiceCall-Audio", "开始接收服务器音频数据: " + data.length + " bytes, 时间戳: " + receiveStartTime);
+
         // 检查线程池状态，避免在已关闭的线程池中执行任务
         if (audioExecutor == null || audioExecutor.isShutdown() || audioExecutor.isTerminated()) {
             Log.w("VoiceCall", "AudioExecutor已关闭，忽略音频数据");
@@ -969,8 +1035,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         audioExecutor.execute(() -> {
             try {
                 Log.d("AudioDebug", "收到音频数据长度: " + data.length + " bytes");
+                
+                // 记录解码开始时间
+                long decodeStartTime = System.currentTimeMillis();
                 int decodedSamples = opusUtils.decode(decoderHandle, data, decodedBuffer);
-                Log.d("AudioDebug", "解码样本数: " + decodedSamples);
+                long decodeEndTime = System.currentTimeMillis();
+                Log.d("VoiceCall-Audio", "音频解码完成: " + data.length + " bytes -> " + decodedSamples + " samples, 耗时: " + (decodeEndTime - decodeStartTime) + "ms");
 
                 if (decodedSamples > 0) {
                     byte[] pcmData = new byte[decodedSamples * 2];
@@ -981,6 +1051,31 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     }
                     
                     Log.d("AudioDebug", "PCM数据长度: " + pcmData.length + " bytes");
+                    
+                    // 记录PCM数据准备完成时间
+                    long pcmReadyTime = System.currentTimeMillis();
+                    Log.d("VoiceCall-Audio", "PCM数据准备完成: " + pcmData.length + " bytes, 从接收到现在总耗时: " + (pcmReadyTime - receiveStartTime) + "ms");
+                    
+                    // 计算从音频上传到接收的总延迟
+                    long totalLatency = pcmReadyTime - lastAudioUploadTime;
+                    
+                    // 累计延迟数据用于统计
+                    totalLatencySum += totalLatency;
+                    latencySampleCount++;
+                    
+                    // 每秒输出一次延迟统计，而不是每一帧都输出
+                    long currentTime = System.currentTimeMillis();
+                    if (currentTime - lastLogTime >= 1000) {
+                        if (latencySampleCount > 0) {
+                            long avgLatency = totalLatencySum / latencySampleCount;
+                            Log.d("VoiceCall-Latency", String.format("平均延迟统计: %dms (基于%d个音频帧，采样周期1秒)", avgLatency, latencySampleCount));
+                            
+                            // 重置统计
+                            totalLatencySum = 0;
+                            latencySampleCount = 0;
+                            lastLogTime = currentTime;
+                        }
+                    }
                     
                     // 将音频数据放入队列，由专门的播放线程处理
                     if (audioQueue != null) {
@@ -1083,7 +1178,16 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                          continue; // 超时，继续循环检查
                      }
                      
-                     Log.d("AudioPlayback", "从队列取出音频数据: " + pcmData.length + " bytes");
+                     // 记录音频开始播放时间
+                     long playbackStartTime = System.currentTimeMillis();
+                     Log.d("AudioPlayback", "从队列取出音频数据: " + pcmData.length + " bytes, 开始播放时间戳: " + playbackStartTime);
+                     
+                     // 计算从音频上传到开始播放的总延迟
+                     long totalLatencyToPlayback = playbackStartTime - lastAudioUploadTime;
+                     // 只记录异常高的延迟（超过200ms）
+                     if (totalLatencyToPlayback > 200) {
+                         Log.w("VoiceCall-Latency", "高延迟检测: " + totalLatencyToPlayback + "ms (从上传开始到实际播放)");
+                     }
                      
                      // 确保AudioTrack已初始化
                      if (audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
@@ -1102,6 +1206,15 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                      if (isPlaying && audioTrack != null) {
                          int bytesWritten = audioTrack.write(pcmData, 0, pcmData.length, AudioTrack.WRITE_BLOCKING);
                          Log.d("AudioDebug", "写入AudioTrack字节数: " + bytesWritten);
+                         
+                         // 记录音频写入完成时间
+                         long writeCompleteTime = System.currentTimeMillis();
+                         long finalLatency = writeCompleteTime - lastAudioUploadTime;
+                         frameCount++;
+                         // 每100帧输出一次最终延迟，减少日志量
+                         if (frameCount % 100 == 0) {
+                             Log.d("VoiceCall-Latency", "最终延迟采样: " + finalLatency + "ms (从上传开始到写入AudioTrack完成)");
+                         }
                      }
                  } catch (InterruptedException e) {
                      Log.d("AudioPlayback", "播放线程被中断");
