@@ -268,8 +268,8 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         
 //        initSDK();
         initViews();
-        initWebSocket();
-        initAudio();
+        initAudio();       // 先初始化音频（创建线程池）
+        initWebSocket();   // 后初始化WebSocket（可能需要立即录音）
         setupListeners();
          initImageRecognition();
 
@@ -301,7 +301,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private void initWebSocket() {
         // 从MainActivity获取WebSocket配置
 //        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
-        String deviceId = "3c:84:27:c8:45:10";
+        String deviceId = 	"c0:3e:ba:2e:d5:97";
         SettingsManager settingsManager = new SettingsManager(this);
         String wsUrl = settingsManager.getWsUrl();
         String token = settingsManager.getToken();
@@ -309,6 +309,14 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
         webSocketManager = WebSocketManager.getInstance(deviceId);
         webSocketManager.setListener(this);
+
+        // 如果已经连接，直接开始通话，不需要重新连接
+        if (webSocketManager.isConnected()) {
+            Log.d("VoiceCall", "WebSocket已连接，直接开始通话");
+            updateCallStatus("已连接");
+            startCall();
+            return;
+        }
 
         // 连接WebSocket
         try {

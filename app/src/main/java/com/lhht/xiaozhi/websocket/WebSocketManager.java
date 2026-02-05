@@ -174,6 +174,14 @@ public class WebSocketManager {
             if (client != null && client.isOpen()) {
                 client.close();
             }
+            
+            // 重新启动消息处理器（如果已停止）
+            if (messageExecutor == null || messageExecutor.isShutdown()) {
+                messageQueue.clear();
+                messageExecutor = Executors.newSingleThreadExecutor();
+                isProcessingQueue.set(false);
+                startMessageProcessor();
+            }
 
             Map<String, String> headers = new HashMap<>();
             headers.put("device-id", deviceId);
@@ -219,6 +227,11 @@ public class WebSocketManager {
                 @Override
                 public void onClose(int code, String reason, boolean remote) {
                     Log.d(TAG, "WebSocket Closed: code=" + code + ", reason=" + reason + ", remote=" + remote);
+                    // 检查这个回调是否来自当前client，避免旧连接的回调影响新连接
+                    if (this != client) {
+                        Log.d(TAG, "忽略旧连接的关闭回调");
+                        return;
+                    }
                     mainHandler.post(() -> {
                         if (listener != null) {
                             listener.onDisconnected();

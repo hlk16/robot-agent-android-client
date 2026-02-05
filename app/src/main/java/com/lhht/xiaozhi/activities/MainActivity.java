@@ -583,6 +583,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             }
             
             try {
+                // 重新设置监听器，防止断开连接后被移除
+                webSocketManager.setListener(this);
                 webSocketManager.connect(wsUrl, token, enableToken);
             } catch (Exception e) {
                 Log.e("WebSocket", "连接失败: " + e.getMessage());
