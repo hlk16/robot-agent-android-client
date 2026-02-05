@@ -22,6 +22,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class WebSocketManager {
     private static final String TAG = "WebSocketManager";
+    private static WebSocketManager instance;  // 单例实例
+    
     private WebSocketClient client;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String deviceId;
@@ -95,11 +97,25 @@ public class WebSocketManager {
         void onBinaryMessage(byte[] data);
     }
 
-    public WebSocketManager(String deviceId) {
+    // 私有构造函数，防止外部new
+    private WebSocketManager(String deviceId) {
         this.deviceId = deviceId;
         this.messageQueue = new LinkedBlockingQueue<>(MAX_QUEUE_SIZE);
         this.messageExecutor = Executors.newSingleThreadExecutor();
         startMessageProcessor();
+    }
+    
+    // 获取单例实例
+    public static synchronized WebSocketManager getInstance(String deviceId) {
+        if (instance == null) {
+            instance = new WebSocketManager(deviceId);
+        }
+        return instance;
+    }
+    
+    // 移除监听器，防止内存泄漏
+    public void removeListener() {
+        this.listener = null;
     }
     
     // 启动消息处理器

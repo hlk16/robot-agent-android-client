@@ -307,7 +307,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         String token = settingsManager.getToken();
         boolean enableToken = settingsManager.isTokenEnabled();
 
-        webSocketManager = new WebSocketManager(deviceId);
+        webSocketManager = WebSocketManager.getInstance(deviceId);
         webSocketManager.setListener(this);
 
         // 连接WebSocket
@@ -1116,6 +1116,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 Log.e("VoiceCall", "发送结束消息失败", e);
             }
             webSocketManager.disconnect();
+            webSocketManager.removeListener();  // 移除监听，防止内存泄漏
         }
         endCall();
         

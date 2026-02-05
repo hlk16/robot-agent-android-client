@@ -13,6 +13,7 @@ import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.Message;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
@@ -47,6 +48,7 @@ import org.json.JSONException;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.lang.ref.WeakReference;
 import android.view.Choreographer;
 import android.os.Build;
 import android.app.ActivityManager;
@@ -111,8 +113,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     private static final int OPUS_FRAME_SIZE = 960; // 60ms at 16kHz
     private static final int MAX_QUEUE_SIZE = 5; // 最大消息队列长度
     private static final int MESSAGE_TIMEOUT = 500; // 消息处理超时时间（毫秒）
-
-    public static WebSocketManager webSocketManager;
+    //改掉之前static关键字防止泄露
+    private WebSocketManager webSocketManager;
     private SettingsManager settingsManager;
     private TextView connectionStatus;
     private Button connectButton;
@@ -145,8 +147,28 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     private boolean isFirstMessage = true;
     private boolean isAudioTrackPlaying = false;
     private boolean isAudioTrackPaused = false;
-    private Handler mainHandler;
+
+    private SafeHandler mainHandler;
     private final Object messageLock = new Object();
+    
+    // 静态Handler，避免内存泄漏
+    private static class SafeHandler extends Handler {
+        private final WeakReference<MainActivity> weakRef;
+        
+        SafeHandler(MainActivity activity) {
+            super(Looper.getMainLooper());
+            this.weakRef = new WeakReference<>(activity);
+        }
+        
+        @Override
+        public void handleMessage(Message msg) {
+            MainActivity activity = weakRef.get();
+            if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+                return;
+            }
+            // 处理消息（如有需要）
+        }
+    }
     private volatile String currentText = "";
     private volatile boolean isProcessingMessage = false;
     private long lastMessageTime = 0;
@@ -158,7 +180,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
 
     private boolean isAuth = false;
     
-    // 性能监控类
+    // 性能监控类 - 使用WeakReference避免内存泄漏
     private static class PerformanceMonitor {
         private Choreographer.FrameCallback frameCallback;
         private long lastFrameTimeNanos = 0;
@@ -166,12 +188,26 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         private long fpsUpdateTimeNanos = 0;
         private float currentFPS = 0;
         private boolean isMonitoring = false;
-        private final MainActivity activity;
+//添加了WeakReference关键字
+        private final WeakReference<MainActivity> weakRef;
         private Handler handler;
+        private final Runnable logRunnable;
+        private long currentFrameTimeNanos;
         
         public PerformanceMonitor(MainActivity activity) {
-            this.activity = activity;
+            this.weakRef = new WeakReference<>(activity);
             this.handler = new Handler(Looper.getMainLooper());
+            // 只创建一次Runnable，避免重复分配
+            this.logRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    MainActivity activity = weakRef.get();
+                    if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
+                        return;
+                    }
+                    logPerformanceMetrics(activity, currentFrameTimeNanos);
+                }
+            };
         }
         
         public void startMonitoring() {
@@ -196,10 +232,9 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
                         frameCount = 0;
                         fpsUpdateTimeNanos = frameTimeNanos;
                         
-                        // 在主线程中记录FPS和其他性能指标
-                        handler.post(() -> {
-                            logPerformanceMetrics(frameTimeNanos);
-                        });
+                        // 在主线程中记录FPS和其他性能指标，复用同一个Runnable
+                        currentFrameTimeNanos = frameTimeNanos;
+                        handler.post(logRunnable);
                     }
                     
                     lastFrameTimeNanos = frameTimeNanos;
@@ -224,7 +259,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             Log.d("PerformanceMonitor", "性能监控已停止");
         }
         
-        private void logPerformanceMetrics(long frameTimeNanos) {
+        private void logPerformanceMetrics(MainActivity activity, long frameTimeNanos) {
             // 记录FPS
             Log.d("PerformanceMonitor", String.format("当前FPS: %.2f", currentFPS));
             
@@ -288,16 +323,30 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     private volatile TTSMessage currentTTSMessage = null;
     private volatile String currentSessionId = null;
 
-    // 修改 MessageHandler 类
-    private class MessageHandler {
+    // 修改 MessageHandler 类 - 静态内部类避免内存泄漏
+    private static class MessageHandler {
         private static final int MAX_TEXT_LENGTH = 100; // 长文本阈值
+        private final WeakReference<MainActivity> weakRef;
+        private final WeakReference<SafeHandler> handlerRef;
+        
+        MessageHandler(MainActivity activity, SafeHandler handler) {
+            this.weakRef = new WeakReference<>(activity);
+            this.handlerRef = new WeakReference<>(handler);
+        }
         
         public synchronized void reset() {
-            mainHandler.removeCallbacksAndMessages(null);
+            SafeHandler handler = handlerRef.get();
+            if (handler != null) {
+                handler.removeCallbacksAndMessages(null);
+            }
         }
         
         public synchronized void processMessage(String text) {
             if (text == null || text.isEmpty()) return;
+            
+            MainActivity activity = weakRef.get();
+            SafeHandler handler = handlerRef.get();
+            if (activity == null || handler == null) return;
             
             // 直接在当前线程处理，避免线程切换开销
             String[] parts = extractEmojiAndText(text);
@@ -305,10 +354,12 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             String cleanText = parts[1];
             
             // 使用 postAtFrontOfQueue 确保最高优先级
-            mainHandler.postAtFrontOfQueue(() -> {
+            handler.postAtFrontOfQueue(() -> {
+                MainActivity act = weakRef.get();
+                if (act == null || act.isFinishing() || act.isDestroyed()) return;
                 try {
-                    updateEmojiView(emoji);
-                    updateTextView(cleanText);
+                    act.updateEmojiView(emoji);
+                    act.updateTextView(cleanText);
                     Log.d("XiaoZhi", "UI更新完成: " + text + " 时间: " + System.nanoTime());
                 } catch (Exception e) {
                     Log.e("XiaoZhi", "更新显示失败", e);
@@ -316,7 +367,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             });
         }
         
-        private String[] extractEmojiAndText(String text) {
+        // 静态工具方法，提取emoji和文本
+        static String[] extractEmojiAndText(String text) {
             String emoji = "";
             String cleanText = text;
             
@@ -333,40 +385,45 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         }
         
         private void updateDisplay(String emoji, String text) {
+            MainActivity activity = weakRef.get();
+            SafeHandler handler = handlerRef.get();
+            if (activity == null || handler == null) return;
+            
             // 使用 post 而不是 postDelayed，减少延迟
-            mainHandler.post(() -> {
+            handler.post(() -> {
+                MainActivity act = weakRef.get();
+                if (act == null || act.isFinishing() || act.isDestroyed()) return;
                 try {
-                    // 更新表情
-                    updateEmojiView(emoji);
-                    // 更新文本
-                    updateTextView(text);
+                    act.updateEmojiView(emoji);
+                    act.updateTextView(text);
                 } catch (Exception e) {
                     Log.e("XiaoZhi", "更新显示失败", e);
                 }
             });
         }
-        
-        private void updateEmojiView(String emoji) {
-            if (emoji.isEmpty()) {
-                emojiText.setVisibility(View.GONE);
-            } else {
-                emojiText.setText(emoji);
-                emojiText.setVisibility(View.VISIBLE);
-            }
-        }
-        
-        private void updateTextView(String text) {
-            if (text.isEmpty()) {
-                messageText.setVisibility(View.GONE);
-            } else {
-                messageText.setText(text);
-                messageText.setVisibility(View.VISIBLE);
-            }
-        }
     }
 
     // 创建消息处理器实例
-    private final MessageHandler messageHandler = new MessageHandler();
+    private MessageHandler messageHandler;
+    
+    // UI更新方法，供MessageHandler调用
+    void updateEmojiView(String emoji) {
+        if (emoji == null || emoji.isEmpty()) {
+            emojiText.setVisibility(View.GONE);
+        } else {
+            emojiText.setText(emoji);
+            emojiText.setVisibility(View.VISIBLE);
+        }
+    }
+    
+    void updateTextView(String text) {
+        if (text == null || text.isEmpty()) {
+            messageText.setVisibility(View.GONE);
+        } else {
+            messageText.setText(text);
+            messageText.setVisibility(View.VISIBLE);
+        }
+    }
     
     private void showFirstTimeDialog() {
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
@@ -431,11 +488,15 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
 //        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
         String deviceId = 	"c0:3e:ba:2e:d5:97";
         Log.i("MainActivity", "设备ID: " + deviceId);
-        webSocketManager = new WebSocketManager(deviceId);
+//如果WebSocketManager不是单例
+//每次 new WebSocketManager() → 创建新线程池（第101行）
+//旧实例的线程池没有被正确shutdown → 线程泄漏
+        webSocketManager = WebSocketManager.getInstance(deviceId);
         webSocketManager.setListener(this);
         executorService = Executors.newSingleThreadExecutor();
         audioExecutor = Executors.newSingleThreadExecutor();
-        mainHandler = new Handler(getMainLooper());
+        mainHandler = new SafeHandler(this);
+        messageHandler = new MessageHandler(this, mainHandler);
         
         // 初始化性能监控
         performanceMonitor = new PerformanceMonitor(this);
@@ -651,7 +712,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
                             runOnUiThread(() -> {
                                 try {
                                     // 直接更新UI，不经过MessageHandler的队列
-                                    String[] parts = messageHandler.extractEmojiAndText(text);
+                                    String[] parts = MessageHandler.extractEmojiAndText(text);
                                     if (!parts[0].isEmpty()) {
                                         emojiText.setText(parts[0]);
                                         emojiText.setVisibility(View.VISIBLE);
@@ -801,6 +862,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         }
         
         webSocketManager.disconnect();
+        webSocketManager.removeListener();  // 移除监听，防止内存泄漏
         if (audioRecord != null) {
             audioRecord.release();
             audioRecord = null;

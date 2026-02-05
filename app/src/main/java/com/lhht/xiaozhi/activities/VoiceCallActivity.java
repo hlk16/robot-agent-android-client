@@ -174,7 +174,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         String token = settingsManager.getToken();
         boolean enableToken = settingsManager.isTokenEnabled();
 
-        webSocketManager = new WebSocketManager(deviceId);
+        webSocketManager = WebSocketManager.getInstance(deviceId);
         webSocketManager.setListener(this);
 
         // 连接WebSocket
@@ -1092,6 +1092,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 Log.e("VoiceCall", "发送结束消息失败", e);
             }
             webSocketManager.disconnect();
+            webSocketManager.removeListener();  // 移除监听，防止内存泄漏
         }
         endCall();
         if (encoderHandle != 0) {
