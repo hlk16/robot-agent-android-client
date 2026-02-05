@@ -40,6 +40,7 @@ import vip.inode.demo.opusaudiodemo.utils.OpusUtils;
 import org.json.JSONObject;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.lang.ref.WeakReference;
 
 import android.hardware.Camera;
 import android.view.SurfaceHolder;
@@ -129,11 +130,17 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private long totalLatencySum = 0;
     private int latencySampleCount = 0;
     
+    // 复用的缓冲区，避免频繁创建数组
+    // ⚠️ 注意：音频播放数据不能复用（会放入队列异步处理），波形显示数据可以复用
+    private float[] waveformBuffer = new float[100];      // 用户波形显示
+    private long lastWaveformUpdate = 0;
+    private float[] amplitudeBuffer = new float[OPUS_FRAME_SIZE];  // AI波形显示
+    
     // 回声消除和噪声抑制
     private AcousticEchoCanceler echoCanceler;
     private NoiseSuppressor noiseSuppressor;
     
-    // 性能监控类
+    // 性能监控类 - 使用 WeakReference 防止内存泄漏
     private static class PerformanceMonitor {
         private Choreographer.FrameCallback frameCallback;
         private long lastFrameTimeNanos = 0;
@@ -141,11 +148,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         private long fpsUpdateTimeNanos = 0;
         private float currentFPS = 0;
         private boolean isMonitoring = false;
-        private final Voice activity;
+        private WeakReference<Voice> activityRef;  // 使用弱引用
         private Handler handler;
         
         public PerformanceMonitor(Voice activity) {
-            this.activity = activity;
+            this.activityRef = new WeakReference<>(activity);
             this.handler = new Handler(Looper.getMainLooper());
         }
         
@@ -200,6 +207,13 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }
         
         private void logPerformanceMetrics(long frameTimeNanos) {
+            Voice activity = activityRef.get();
+            if (activity == null) {
+                // Activity 已被回收，停止监控
+                stopMonitoring();
+                return;
+            }
+            
             // 记录FPS
             Log.d("VoicePerformanceMonitor", String.format("当前FPS: %.2f", currentFPS));
             
@@ -273,13 +287,14 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         setupListeners();
          initImageRecognition();
 
+        // 视频播放已禁用以保持高刷新率
         // 初始化视频播放
-        Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.boqijiang);
-        videoView.setVideoURI(videoUri);
-        videoView.setOnPreparedListener(mp -> {
-            mp.setLooping(true);
-            mp.start();
-        });
+        // Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.boqijiang);
+        // videoView.setVideoURI(videoUri);
+        // videoView.setOnPreparedListener(mp -> {
+        //     mp.setLooping(true);
+        //     mp.start();
+        // });
     }
 
     private void initViews() {
@@ -819,16 +834,25 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         });
     }
 
-    //更新人声音波形
+    //更新人声音波形 - 使用复用缓冲区，减少内存分配
     private void updateUserWaveform(byte[] buffer) {
-        if (userWaveformView != null) {
-            float[] amplitudes = new float[buffer.length / 2];
-            for (int i = 0; i < amplitudes.length; i++) {
-                short sample = (short) ((buffer[i * 2] & 0xFF) | (buffer[i * 2 + 1] << 8));
-                amplitudes[i] = sample / 32768f;
+        if (userWaveformView == null) return;
+        
+        // 降频：每 50ms 更新一次 UI，避免过度渲染
+        long now = System.currentTimeMillis();
+        if (now - lastWaveformUpdate < 50) return;
+        lastWaveformUpdate = now;
+        
+        // 采样：只取 100 个点，避免大量计算
+        int step = Math.max(1, (buffer.length / 2) / 100);
+        for (int i = 0; i < 100; i++) {
+            int idx = i * step * 2;
+            if (idx + 1 < buffer.length) {
+                short sample = (short) ((buffer[idx] & 0xFF) | (buffer[idx + 1] << 8));
+                waveformBuffer[i] = sample / 32768f;
             }
-            runOnUiThread(() -> userWaveformView.setAmplitudes(amplitudes));
         }
+        runOnUiThread(() -> userWaveformView.setAmplitudes(waveformBuffer));
     }
 
     //更新AI声音波形
@@ -1051,7 +1075,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 Log.d("VoiceCall-Audio", "音频解码完成: " + data.length + " bytes -> " + decodedSamples + " samples, 耗时: " + (decodeEndTime - decodeStartTime) + "ms");
 
                 if (decodedSamples > 0) {
+                    // ⚠️ 音频数据必须创建新数组，因为会被放入队列异步播放
+                    // 复用缓冲区会导致数据被覆盖，播放异常
                     byte[] pcmData = new byte[decodedSamples * 2];
+                    
                     for (int i = 0; i < decodedSamples; i++) {
                         short sample = decodedBuffer[i];
                         pcmData[i * 2] = (byte) (sample & 0xff);
@@ -1094,7 +1121,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                         }
                     }
 
-                    float[] amplitudes = new float[decodedSamples];
+                    // 波形显示数据可以复用缓冲区（立即使用，不入队列）
+                    float[] amplitudes = amplitudeBuffer.length >= decodedSamples 
+                        ? amplitudeBuffer 
+                        : new float[decodedSamples];
                     for (int i = 0; i < decodedSamples; i++) {
                         amplitudes[i] = decodedBuffer[i] / 32768f;
                     }
@@ -1108,66 +1138,20 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
     @Override
     protected void onDestroy() {
+        Log.d("Voice", "onDestroy 开始执行");
         super.onDestroy();
         
-        // 停止性能监控
+        // 1. 停止性能监控（使用 WeakReference，不会阻止 Activity 回收）
         if (performanceMonitor != null) {
             performanceMonitor.stopMonitoring();
+            performanceMonitor = null;
         }
         
-        if (webSocketManager != null) {
-            try {
-                JSONObject endMessage = new JSONObject();
-                endMessage.put("type", "end");
-                webSocketManager.sendMessage(endMessage.toString());
-            } catch (Exception e) {
-                Log.e("VoiceCall", "发送结束消息失败", e);
-            }
-            webSocketManager.disconnect();
-            webSocketManager.removeListener();  // 移除监听，防止内存泄漏
-        }
+        // 2. 调用 endCall 释放所有音频和 WebSocket 资源
         endCall();
         
-        // 释放回声消除器和噪声抑制器
-        if (echoCanceler != null) {
-            echoCanceler.setEnabled(false);
-            echoCanceler.release();
-            echoCanceler = null;
-        }
-        if (noiseSuppressor != null) {
-            noiseSuppressor.setEnabled(false);
-            noiseSuppressor.release();
-            noiseSuppressor = null;
-        }
-        
-        if (encoderHandle != 0) {
-            opusUtils.destroyEncoder(encoderHandle);
-            encoderHandle = 0;
-        }
-        if (decoderHandle != 0) {
-            opusUtils.destroyDecoder(decoderHandle);
-            decoderHandle = 0;
-        }
-        if (imageRecognitionManager != null) {
-            imageRecognitionManager.release();
-            imageRecognitionManager = null;
-        }
-        executorService.shutdown();
-        audioExecutor.shutdown();
-        if (playbackExecutor != null) {
-            playbackExecutor.shutdown();
-        }
-        
-        // 恢复默认音频模式
-        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
-        audioManager.setMode(AudioManager.MODE_NORMAL);
-        
-        // 停止播放线程
-         stopPlaybackThread();
-         
-         // 释放音频焦点
-         abandonAudioFocus();
-     }
+        Log.d("Voice", "onDestroy 执行完成");
+    }
      
      private void startPlaybackThread() {
          // 检查线程池状态
@@ -1295,17 +1279,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             performanceMonitor.stopMonitoring();
         }
         
-        if (videoView != null && videoView.isPlaying()) {
-            videoView.pause();
-        }
+        // 视频播放已禁用
+        // if (videoView != null && videoView.isPlaying()) {
+        //     videoView.pause();
+        // }
         stopCameraPreview();
-        isPreviewStarted = false;
-        if (frontCameraPreview != null) {
-            frontCameraPreview.setVisibility(View.GONE);
-        }
-        if (previewButton != null) {
-            previewButton.setImageResource(R.drawable.baseline_videocam_24);
-        }
         isPreviewStarted = false;
         if (frontCameraPreview != null) {
             frontCameraPreview.setVisibility(View.GONE);
@@ -1324,25 +1302,28 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             performanceMonitor.startMonitoring();
         }
         
-        if (videoView != null && !videoView.isPlaying()) {
-            videoView.start();
-        }
+        // 视频播放已禁用
+        // if (videoView != null && !videoView.isPlaying()) {
+        //     videoView.start();
+        // }
     }
 
     @Override
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
-        if (videoView != null) {
-            outState.putInt("VIDEO_POSITION", videoView.getCurrentPosition());
-        }
+        // 视频播放已禁用
+        // if (videoView != null) {
+        //     outState.putInt("VIDEO_POSITION", videoView.getCurrentPosition());
+        // }
     }
 
     @Override
     protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
         super.onRestoreInstanceState(savedInstanceState);
-        if (videoView != null) {
-            videoView.seekTo(savedInstanceState.getInt("VIDEO_POSITION", 0));
-        }
+        // 视频播放已禁用
+        // if (videoView != null) {
+        //     videoView.seekTo(savedInstanceState.getInt("VIDEO_POSITION", 0));
+        // }
     }
 
     private void initSDK() {

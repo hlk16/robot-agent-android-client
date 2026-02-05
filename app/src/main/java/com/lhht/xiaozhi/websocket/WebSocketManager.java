@@ -19,6 +19,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.lang.ref.WeakReference;
 
 public class WebSocketManager {
     private static final String TAG = "WebSocketManager";
@@ -27,7 +28,7 @@ public class WebSocketManager {
     private WebSocketClient client;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private String deviceId;
-    private WebSocketListener listener;
+    private WeakReference<WebSocketListener> listenerRef;  // 使用弱引用，防止内存泄漏
     private String serverUrl;
     private String token;
     private boolean enableToken;
@@ -115,7 +116,12 @@ public class WebSocketManager {
     
     // 移除监听器，防止内存泄漏
     public void removeListener() {
-        this.listener = null;
+        this.listenerRef = null;
+    }
+    
+    // 获取监听器（内部使用）
+    private WebSocketListener getListener() {
+        return listenerRef != null ? listenerRef.get() : null;
     }
     
     // 启动消息处理器
@@ -154,11 +160,12 @@ public class WebSocketManager {
     }
 
     public void setListener(WebSocketListener listener) {
-        this.listener = listener;
+        this.listenerRef = new WeakReference<>(listener);
     }
 
     public void connect(String url, String token, boolean enableToken) {
         if (url == null || url.isEmpty()) {
+            WebSocketListener listener = getListener();
             if (listener != null) {
                 listener.onError("WebSocket地址不能为空");
             }
@@ -195,6 +202,7 @@ public class WebSocketManager {
                 public void onOpen(ServerHandshake handshakedata) {
                     Log.d(TAG, "WebSocket Connected");
                     mainHandler.post(() -> {
+                        WebSocketListener listener = getListener();
                         if (listener != null) {
                             listener.onConnected();
                         }
@@ -208,6 +216,7 @@ public class WebSocketManager {
                     byte[] data = new byte[bytes.remaining()];
                     bytes.get(data);
                     mainHandler.post(() -> {
+                        WebSocketListener listener = getListener();
                         if (listener != null) {
                             listener.onBinaryMessage(data);
                         }
@@ -218,6 +227,7 @@ public class WebSocketManager {
                 public void onMessage(String message) {
                     Log.d(TAG, "Received message: " + message);
                     mainHandler.post(() -> {
+                        WebSocketListener listener = getListener();
                         if (listener != null) {
                             listener.onMessage(message);
                         }
@@ -233,6 +243,7 @@ public class WebSocketManager {
                         return;
                     }
                     mainHandler.post(() -> {
+                        WebSocketListener listener = getListener();
                         if (listener != null) {
                             listener.onDisconnected();
                         }
@@ -250,6 +261,7 @@ public class WebSocketManager {
                 public void onError(Exception ex) {
                     Log.e(TAG, "WebSocket Error: " + ex.getMessage(), ex);
                     mainHandler.post(() -> {
+                        WebSocketListener listener = getListener();
                         if (listener != null) {
                             listener.onError(ex.getMessage());
                         }
@@ -281,6 +293,7 @@ public class WebSocketManager {
                     if (!connected[0]) {
                         connectThread.interrupt();
                         mainHandler.post(() -> {
+                            WebSocketListener listener = getListener();
                             if (listener != null) {
                                 listener.onError("连接超时");
                             }
@@ -292,6 +305,7 @@ public class WebSocketManager {
                 } catch (InterruptedException e) {
                     Log.e(TAG, "连接中断", e);
                     mainHandler.post(() -> {
+                        WebSocketListener listener = getListener();
                         if (listener != null) {
                             listener.onError("连接中断: " + e.getMessage());
                         }
@@ -301,6 +315,7 @@ public class WebSocketManager {
             
         } catch (Exception e) {
             Log.e(TAG, "创建WebSocket失败", e);
+            WebSocketListener listener = getListener();
             if (listener != null) {
                 listener.onError("创建WebSocket失败: " + e.getMessage());
             }
