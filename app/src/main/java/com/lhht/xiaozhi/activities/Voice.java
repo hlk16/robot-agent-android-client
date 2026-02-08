@@ -330,7 +330,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             Trace.beginSection("Voice.initAudio");
             long audioStart = System.currentTimeMillis();
             initAudio();
-            Log.d("Performance", "Voice音频初始化耗时: " + (System.currentTimeMillis() - audioStart) + "ms");
+            Log.d("XiaoZhiPerf", "Voice音频初始化耗时: " + (System.currentTimeMillis() - audioStart) + "ms");
             Trace.endSection();
         }, 100);
         
@@ -339,7 +339,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             Trace.beginSection("Voice.initWebSocket");
             long wsStart = System.currentTimeMillis();
             initWebSocket();
-            Log.d("Performance", "Voice WebSocket初始化耗时: " + (System.currentTimeMillis() - wsStart) + "ms");
+            Log.d("XiaoZhiPerf", "Voice WebSocket初始化耗时: " + (System.currentTimeMillis() - wsStart) + "ms");
             Trace.endSection();
         }, 200);
         
@@ -348,12 +348,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             Trace.beginSection("Voice.initImageRecognition");
             long imgStart = System.currentTimeMillis();
             initImageRecognition();
-            Log.d("Performance", "Voice图像识别初始化耗时: " + (System.currentTimeMillis() - imgStart) + "ms");
+            Log.d("XiaoZhiPerf", "Voice图像识别初始化耗时: " + (System.currentTimeMillis() - imgStart) + "ms");
             Trace.endSection();
         }, 300);
         
         long duration = System.currentTimeMillis() - startTime;
-        Log.d("Performance", "Voice.onCreate 总耗时: " + duration + "ms");
+        Log.d("XiaoZhiPerf", "Voice.onCreate 总耗时: " + duration + "ms");
         Trace.endSection();
     }
 
@@ -1215,20 +1215,142 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
 
     @Override
+    protected void onPause() {
+        super.onPause();
+        // 停止性能监控
+        if (performanceMonitor != null) {
+            performanceMonitor.stopMonitoring();
+        }
+        // 停止摄像头预览（释放相机资源）
+        stopCameraPreview();
+        isPreviewStarted = false;
+        // 隐藏预览并恢复按钮状态
+        if (frontCameraPreview != null) {
+            frontCameraPreview.setVisibility(View.GONE);
+        }
+        if (previewButton != null) {
+            previewButton.setImageResource(R.drawable.baseline_videocam_24);
+        }
+    }
+    
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 重新启动性能监控
+        if (performanceMonitor != null) {
+            performanceMonitor.startMonitoring();
+        }
+    }
+    
+    @Override
     protected void onDestroy() {
         Log.d("Voice", "onDestroy 开始执行");
-        super.onDestroy();
         
-        // 1. 停止性能监控（使用 WeakReference，不会阻止 Activity 回收）
+        // 1. 移除所有 Handler 回调和消息
+        if (mainHandler != null) {
+            mainHandler.removeCallbacksAndMessages(null);
+        }
+        
+        // 2. 停止性能监控
         if (performanceMonitor != null) {
             performanceMonitor.stopMonitoring();
             performanceMonitor = null;
         }
         
-        // 2. 调用 endCall 释放所有音频和 WebSocket 资源
-        endCall();
+        // 3. 先发送结束消息再断开连接（同步操作）
+        if (webSocketManager != null) {
+            try {
+                if (webSocketManager.isConnected()) {
+                    JSONObject endMessage = new JSONObject();
+                    endMessage.put("type", "end");
+                    webSocketManager.sendMessage(endMessage.toString());
+                    // 短暂等待消息发送
+                    Thread.sleep(100);
+                }
+                webSocketManager.disconnect();
+            } catch (Exception e) {
+                Log.e("Voice", "断开WebSocket失败", e);
+            }
+        }
+        
+        // 4. 停止录音和播放
+        isRecording = false;
+        isPlaybackThreadRunning = false;
+        
+        // 5. 安全释放音频资源
+        stopRecording();
+        
+        if (audioTrack != null) {
+            try {
+                if (audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
+                    audioTrack.stop();
+                }
+                audioTrack.release();
+                audioTrack = null;
+            } catch (Exception e) {
+                Log.e("Voice", "释放AudioTrack失败", e);
+            }
+        }
+        
+        // 6. 清空音频队列
+        if (audioQueue != null) {
+            audioQueue.clear();
+        }
+        
+        // 7. 释放摄像头
+        stopCameraPreview();
+        
+        // 8. 关闭线程池（等待完成）
+        shutdownExecutor(executorService);
+        shutdownExecutor(audioExecutor);
+        shutdownExecutor(playbackExecutor);
+        
+        // 9. 释放编解码器
+        if (encoderHandle != 0) {
+            try {
+                opusUtils.destroyEncoder(encoderHandle);
+                encoderHandle = 0;
+            } catch (Exception e) {
+                Log.e("Voice", "释放Encoder失败", e);
+            }
+        }
+        if (decoderHandle != 0) {
+            try {
+                opusUtils.destroyDecoder(decoderHandle);
+                decoderHandle = 0;
+            } catch (Exception e) {
+                Log.e("Voice", "释放Decoder失败", e);
+            }
+        }
+        
+        // 10. 释放图像识别管理器
+        if (imageRecognitionManager != null) {
+            try {
+                imageRecognitionManager.release();
+            } catch (Exception e) {
+                Log.e("Voice", "释放图像识别管理器失败", e);
+            }
+            imageRecognitionManager = null;
+        }
         
         Log.d("Voice", "onDestroy 执行完成");
+        super.onDestroy();
+    }
+    
+    /**
+     * 安全关闭线程池
+     */
+    private void shutdownExecutor(ExecutorService executor) {
+        if (executor == null || executor.isShutdown()) return;
+        
+        executor.shutdown();
+        try {
+            if (!executor.awaitTermination(1, java.util.concurrent.TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
+        }
     }
      
      private void startPlaybackThread() {
@@ -1346,44 +1468,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         if (audioFocusChangeListener != null) {
             audioManager.abandonAudioFocus(audioFocusChangeListener);
         }
-    }
-
-    @Override
-    protected void onPause() {
-        super.onPause();
-        
-        // 停止性能监控
-        if (performanceMonitor != null) {
-            performanceMonitor.stopMonitoring();
-        }
-        
-        // 视频播放已禁用
-        // if (videoView != null && videoView.isPlaying()) {
-        //     videoView.pause();
-        // }
-        stopCameraPreview();
-        isPreviewStarted = false;
-        if (frontCameraPreview != null) {
-            frontCameraPreview.setVisibility(View.GONE);
-        }
-        if (previewButton != null) {
-            previewButton.setImageResource(R.drawable.baseline_videocam_24);
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        
-        // 重新启动性能监控
-        if (performanceMonitor != null) {
-            performanceMonitor.startMonitoring();
-        }
-        
-        // 视频播放已禁用
-        // if (videoView != null && !videoView.isPlaying()) {
-        //     videoView.start();
-        // }
     }
 
     @Override

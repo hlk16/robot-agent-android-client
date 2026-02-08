@@ -478,7 +478,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             Trace.beginSection("MainActivity.initSDK");
             long sdkStart = System.currentTimeMillis();
             initSDK();
-            Log.d("Performance", "SDK初始化耗时: " + (System.currentTimeMillis() - sdkStart) + "ms");
+            Log.d("XiaoZhiPerf", "SDK初始化耗时: " + (System.currentTimeMillis() - sdkStart) + "ms");
             Trace.endSection();
         }).start();
         
@@ -518,7 +518,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         mainHandler.postDelayed(this::showFirstTimeDialog, 200);
         
         long duration = System.currentTimeMillis() - startTime;
-        Log.d("Performance", "MainActivity.onCreate 总耗时: " + duration + "ms");
+        Log.d("XiaoZhiPerf", "MainActivity.onCreate 总耗时: " + duration + "ms");
         Trace.endSection();
     }
     
@@ -592,7 +592,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             Log.e("MainActivity", "音频组件初始化失败", e);
         }
         
-        Log.d("Performance", "音频组件初始化耗时: " + (System.currentTimeMillis() - start) + "ms");
+        Log.d("XiaoZhiPerf", "音频组件初始化耗时: " + (System.currentTimeMillis() - start) + "ms");
         Trace.endSection();
     }
 
@@ -668,12 +668,12 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
 
     @Override
     public void onConnected() {
-        Log.d("WebSocket", "连接成功");
+//        Log.d("WebSocket", "连接成功");
         addLog("WebSocket", "已连接");
         runOnUiThread(() -> {
             connectionStatus.setText(getString(R.string.connection_status, getString(R.string.status_connected)));
             connectButton.setText(R.string.disconnect);
-            Toast.makeText(this, "连接成功", Toast.LENGTH_SHORT).show();
+//            Toast.makeText(this, "连接成功", Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -909,6 +909,15 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         }
     }
     
+    @Override
+    protected void onPause() {
+        super.onPause();
+        // 移除所有 Handler 回调，防止内存泄漏
+        if (mainHandler != null) {
+            mainHandler.removeCallbacksAndMessages(null);
+        }
+    }
+    
     /**
      * 根据当前连接状态更新UI
      */
@@ -929,32 +938,79 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     protected void onDestroy() {
         super.onDestroy();
         
+        // 移除所有 Handler 回调
+        if (mainHandler != null) {
+            mainHandler.removeCallbacksAndMessages(null);
+        }
+        
         // 停止性能监控
         if (performanceMonitor != null) {
             performanceMonitor.stopMonitoring();
+            performanceMonitor = null;
         }
         
-        webSocketManager.disconnect();
-        webSocketManager.removeListener();  // 移除监听，防止内存泄漏
-        if (audioRecord != null) {
-            audioRecord.release();
-            audioRecord = null;
+        // 注意：不要移除 WebSocket 监听器，因为 Voice 可能还在使用
+        // 只断开当前 Activity 的连接请求
+        // webSocketManager.removeListener();  // 删除这行！
+        
+        // 安全释放音频资源（移到后台线程）
+        if (audioExecutor != null && !audioExecutor.isShutdown()) {
+            audioExecutor.execute(() -> {
+                if (audioRecord != null) {
+                    try {
+                        audioRecord.stop();
+                        audioRecord.release();
+                    } catch (Exception e) {
+                        Log.e("MainActivity", "释放AudioRecord失败", e);
+                    }
+                }
+                if (audioTrack != null) {
+                    try {
+                        audioTrack.stop();
+                        audioTrack.release();
+                    } catch (Exception e) {
+                        Log.e("MainActivity", "释放AudioTrack失败", e);
+                    }
+                }
+                if (encoderHandle != 0) {
+                    try {
+                        opusUtils.destroyEncoder(encoderHandle);
+                        encoderHandle = 0;
+                    } catch (Exception e) {
+                        Log.e("MainActivity", "释放Encoder失败", e);
+                    }
+                }
+                if (decoderHandle != 0) {
+                    try {
+                        opusUtils.destroyDecoder(decoderHandle);
+                        decoderHandle = 0;
+                    } catch (Exception e) {
+                        Log.e("MainActivity", "释放Decoder失败", e);
+                    }
+                }
+            });
         }
-        if (audioTrack != null) {
-            audioTrack.stop();
-            audioTrack.release();
-            audioTrack = null;
+        
+        // 关闭线程池（等待任务完成）
+        shutdownExecutor(executorService);
+        shutdownExecutor(audioExecutor);
+    }
+    
+    /**
+     * 安全关闭线程池，等待任务完成
+     */
+    private void shutdownExecutor(ExecutorService executor) {
+        if (executor == null || executor.isShutdown()) return;
+        
+        executor.shutdown();
+        try {
+            // 等待最多 2 秒
+            if (!executor.awaitTermination(2, java.util.concurrent.TimeUnit.SECONDS)) {
+                executor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            executor.shutdownNow();
         }
-        if (encoderHandle != 0) {
-            opusUtils.destroyEncoder(encoderHandle);
-            encoderHandle = 0;
-        }
-        if (decoderHandle != 0) {
-            opusUtils.destroyDecoder(decoderHandle);
-            decoderHandle = 0;
-        }
-        executorService.shutdown();
-        audioExecutor.shutdown();
     }
 
     private void initSDK() {
