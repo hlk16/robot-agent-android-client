@@ -14,6 +14,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.os.Trace;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
@@ -457,52 +458,83 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     @SuppressLint("MissingInflatedId")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        long startTime = System.currentTimeMillis();
+        Trace.beginSection("MainActivity.onCreate");
+        
         super.onCreate(savedInstanceState);
-        initSDK();
-        // 检查并请求所需权限
+        
+        // 1. 先显示UI，让用户感知启动快
+        Trace.beginSection("MainActivity.setContentView");
+        setContentView(R.layout.activity_main);
+        Trace.endSection();
+        
+        // 2. 初始化视图（必须在主线程）
+        Trace.beginSection("MainActivity.initViews");
+        initViews();
+        Trace.endSection();
+        
+        // 3. 延迟初始化SDK（后台线程）
+        new Thread(() -> {
+            Trace.beginSection("MainActivity.initSDK");
+            long sdkStart = System.currentTimeMillis();
+            initSDK();
+            Log.d("Performance", "SDK初始化耗时: " + (System.currentTimeMillis() - sdkStart) + "ms");
+            Trace.endSection();
+        }).start();
+        
+        // 4. 延迟初始化非关键组件
+        mainHandler = new SafeHandler(this);
+        messageHandler = new MessageHandler(this, mainHandler);
+        settingsManager = new SettingsManager(this);
+        
+        String deviceId = "c0:3e:ba:2e:d5:97";
+        webSocketManager = WebSocketManager.getInstance(deviceId);
+        webSocketManager.setListener(this);
+        
+        // 5. 延迟初始化线程池和音频（100ms后，避免阻塞UI）
+        mainHandler.postDelayed(() -> {
+            Trace.beginSection("MainActivity.initBackground");
+            executorService = Executors.newSingleThreadExecutor();
+            audioExecutor = Executors.newSingleThreadExecutor();
+            
+            // 延迟初始化音频组件（懒加载模式）
+            initAudioComponents();
+            
+            performanceMonitor = new PerformanceMonitor(this);
+            performanceMonitor.startMonitoring();
+            Trace.endSection();
+        }, 100);
+        
+        // 6. 检查权限（异步）
         if (!hasPermissions()) {
             requestPermissions();
         }
-        Log.i("MainActivity", "应用启动");
-        setContentView(R.layout.activity_main);
-
-        // 初始化视图
+        checkPermissions();
+        
+        // 7. 设置监听器
+        setupListeners();
+        
+        // 8. 显示首次启动提示（延迟，避免阻塞）
+        mainHandler.postDelayed(this::showFirstTimeDialog, 200);
+        
+        long duration = System.currentTimeMillis() - startTime;
+        Log.d("Performance", "MainActivity.onCreate 总耗时: " + duration + "ms");
+        Trace.endSection();
+    }
+    
+    private void initViews() {
         connectionStatus = findViewById(R.id.connectionStatus);
         connectButton = findViewById(R.id.connectButton);
         recordButton = findViewById(R.id.recordButton);
         messageInput = findViewById(R.id.messageInput);
         sendButton = findViewById(R.id.sendButton);
-        ImageButton settingsButton = findViewById(R.id.settingsButton);
         emojiText = findViewById(R.id.emojiText);
         messageText = findViewById(R.id.messageText);
-//        drawerLayout = findViewById(R.id.draw);
-//        navigationView = findViewById(R.id.draw_menu);
-        menuButton= findViewById(R.id.more);
-
-
-        
-        Log.i("MainActivity", "应用启动");
-
-        // 初始化
-        settingsManager = new SettingsManager(this);
-//        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
-        String deviceId = 	"c0:3e:ba:2e:d5:97";
-        Log.i("MainActivity", "设备ID: " + deviceId);
-//如果WebSocketManager不是单例
-//每次 new WebSocketManager() → 创建新线程池（第101行）
-//旧实例的线程池没有被正确shutdown → 线程泄漏
-        webSocketManager = WebSocketManager.getInstance(deviceId);
-        webSocketManager.setListener(this);
-        executorService = Executors.newSingleThreadExecutor();
-        audioExecutor = Executors.newSingleThreadExecutor();
-        mainHandler = new SafeHandler(this);
-        messageHandler = new MessageHandler(this, mainHandler);
-        
-        // 初始化性能监控
-        performanceMonitor = new PerformanceMonitor(this);
-        performanceMonitor.startMonitoring();
-
-        // 设置按钮点击事件
+        menuButton = findViewById(R.id.more);
+    }
+    
+    private void setupListeners() {
+        ImageButton settingsButton = findViewById(R.id.settingsButton);
         if (connectButton != null) connectButton.setOnClickListener(v -> toggleConnection());
         if (recordButton != null) recordButton.setOnClickListener(v -> startVoiceCall());
         if (sendButton != null) sendButton.setOnClickListener(v -> sendMessage());
@@ -511,22 +543,25 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             Intent intent = new Intent(MainActivity.this, menu.class);
             startActivity(intent);
         });
+    }
+    
+    /**
+     * 懒加载音频组件 - 第一次使用时才初始化
+     */
+    private synchronized void initAudioComponents() {
+        if (audioTrack != null) return; // 已初始化则跳过
         
-        // 检查并请求权限
-        checkPermissions();
-        
-        // 显示首次启动提示
-        showFirstTimeDialog();
-
-        // 初始化音频播放器
-        int minBufferSize = AudioTrack.getMinBufferSize(
-            SAMPLE_RATE,
-            AudioFormat.CHANNEL_OUT_MONO,
-            AUDIO_FORMAT
-        );
-        Log.i("MainActivity", "AudioTrack最小缓冲区: " + minBufferSize + " 字节");
+        Trace.beginSection("MainActivity.initAudioComponents");
+        long start = System.currentTimeMillis();
         
         try {
+            int minBufferSize = AudioTrack.getMinBufferSize(
+                SAMPLE_RATE,
+                AudioFormat.CHANNEL_OUT_MONO,
+                AUDIO_FORMAT
+            );
+            Log.i("MainActivity", "AudioTrack最小缓冲区: " + minBufferSize + " 字节");
+            
             audioTrack = new AudioTrack.Builder()
                 .setAudioAttributes(new AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -542,22 +577,23 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
                 .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
                 .build();
             
-            int state = audioTrack.getState();
-            if (state == AudioTrack.STATE_INITIALIZED) {
+            if (audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
                 Log.i("MainActivity", "AudioTrack初始化成功");
-            } else {
-                Log.e("MainActivity", "AudioTrack初始化失败: " + state);
             }
+            
+            // 初始化 Opus 编解码器
+            opusUtils = OpusUtils.getInstance();
+            encoderHandle = opusUtils.createEncoder(SAMPLE_RATE, 1, 10);
+            decoderHandle = opusUtils.createDecoder(SAMPLE_RATE, 1);
+            decodedBuffer = new short[OPUS_FRAME_SIZE];
+            recordBuffer = new short[OPUS_FRAME_SIZE];
+            
         } catch (Exception e) {
-            Log.e("MainActivity", "创建AudioTrack失败", e);
+            Log.e("MainActivity", "音频组件初始化失败", e);
         }
-
-        // 初始化 Opus 编解码器===
-        opusUtils = OpusUtils.getInstance();
-        encoderHandle = opusUtils.createEncoder(SAMPLE_RATE, 1, 10);
-        decoderHandle = opusUtils.createDecoder(SAMPLE_RATE, 1);
-        decodedBuffer = new short[OPUS_FRAME_SIZE];
-        recordBuffer = new short[OPUS_FRAME_SIZE];
+        
+        Log.d("Performance", "音频组件初始化耗时: " + (System.currentTimeMillis() - start) + "ms");
+        Trace.endSection();
     }
 
     private void checkPermissions() {
@@ -570,7 +606,10 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     }
 
     private void toggleConnection() {
-        if (!webSocketManager.isConnected()) {
+        boolean isConnected = webSocketManager.isConnected();
+        Log.d("WebSocket", "切换连接状态，当前状态: " + (isConnected ? "已连接" : "未连接"));
+        
+        if (!isConnected) {
             String wsUrl = settingsManager.getWsUrl();
             String token = settingsManager.getToken();
             boolean enableToken = settingsManager.isTokenEnabled();
@@ -586,20 +625,21 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
                 // 重新设置监听器，防止断开连接后被移除
                 webSocketManager.setListener(this);
                 webSocketManager.connect(wsUrl, token, enableToken);
+                Log.d("WebSocket", "连接请求已发送");
             } catch (Exception e) {
                 Log.e("WebSocket", "连接失败: " + e.getMessage());
                 Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
             }
         } else {
+            Log.d("WebSocket", "执行断开连接");
             webSocketManager.disconnect();
+            // 立即更新UI，不等待回调（提升响应速度）
+            onDisconnected();
         }
     }
 
     private void startVoiceCall() {
-        if (!webSocketManager.isConnected()) {
-            Toast.makeText(this, "请先连接", Toast.LENGTH_SHORT).show();
-            return;
-        }
+        // 直接跳转到语音通话页面，连接状态在页面内处理
         Intent intent = new Intent(MainActivity.this, Voice.class);
         startActivity(intent);
     }
@@ -783,6 +823,11 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         final byte[] audioData = data.clone();
         audioExecutor.execute(() -> {
             try {
+                // 懒加载：确保音频组件已初始化
+                if (audioTrack == null || opusUtils == null) {
+                    initAudioComponents();
+                }
+                
                 if (audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
                     initAudioTrack();
                 }
@@ -855,6 +900,32 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        // 重新设置监听器并刷新连接状态
+        if (webSocketManager != null) {
+            webSocketManager.setListener(this);
+            updateConnectionStatus();
+        }
+    }
+    
+    /**
+     * 根据当前连接状态更新UI
+     */
+    private void updateConnectionStatus() {
+        boolean isConnected = webSocketManager.isConnected();
+        Log.d("WebSocket", "onResume 刷新状态，当前: " + (isConnected ? "已连接" : "未连接"));
+        
+        if (isConnected) {
+            connectionStatus.setText(getString(R.string.connection_status, getString(R.string.status_connected)));
+            connectButton.setText(R.string.disconnect);
+        } else {
+            connectionStatus.setText(getString(R.string.connection_status, getString(R.string.status_disconnected)));
+            connectButton.setText(R.string.connect);
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         
@@ -898,7 +969,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         // 检查API配置是否完整
         if (appId.isEmpty() || apiKey.isEmpty() || apiSecret.isEmpty()) {
             Log.w("SDK", "API配置不完整，请在设置中配置appID、apiKey和apiSecret");
-            Toast.makeText(this, "请先在设置中配置API信息", Toast.LENGTH_LONG).show();
+            runOnUiThread(() -> Toast.makeText(this, "请先在设置中配置API信息", Toast.LENGTH_LONG).show());
             return;
         }
         
@@ -913,9 +984,9 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         isAuth = (ret == 0);
         Log.d("SDK", isAuth ? "SDK初始化成功" : "SDK初始化失败,错误码: " + ret);
         if (isAuth) {
-//            Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show();
+//            runOnUiThread(() -> Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show());
         } else {
-            Toast.makeText(this, "SDK初始化失败，请检查API配置", Toast.LENGTH_LONG).show();
+            runOnUiThread(() -> Toast.makeText(this, "SDK初始化失败，请检查API配置", Toast.LENGTH_LONG).show());
         }
     }
 }

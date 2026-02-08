@@ -33,6 +33,7 @@ public class WebSocketManager {
     private String token;
     private boolean enableToken;
     private boolean isReconnecting = false;
+    private boolean isUserDisconnected = false; // 用户主动断开，禁止自动重连
     private static final int RECONNECT_DELAY = 3000; // 3秒后重连
     
     // 消息队列机制
@@ -176,6 +177,9 @@ public class WebSocketManager {
         this.token = token;
         this.enableToken = enableToken;
         
+        // 重置用户断开标志，允许新的连接
+        isUserDisconnected = false;
+        
         try {
             // 如果已经连接，先断开
             if (client != null && client.isOpen()) {
@@ -236,9 +240,10 @@ public class WebSocketManager {
 
                 @Override
                 public void onClose(int code, String reason, boolean remote) {
-                    Log.d(TAG, "WebSocket Closed: code=" + code + ", reason=" + reason + ", remote=" + remote);
+                    Log.d(TAG, "WebSocket Closed: code=" + code + ", reason=" + reason + ", remote=" + remote + ", isUserDisconnected=" + isUserDisconnected);
                     // 检查这个回调是否来自当前client，避免旧连接的回调影响新连接
-                    if (this != client) {
+                    // 但如果是用户主动断开，client可能已被清空，需要允许回调执行
+                    if (client != null && this != client) {
                         Log.d(TAG, "忽略旧连接的关闭回调");
                         return;
                     }
@@ -247,12 +252,16 @@ public class WebSocketManager {
                         if (listener != null) {
                             listener.onDisconnected();
                         }
-                        if (!isReconnecting && remote) {
+                        // 只有非用户主动断开且是远程关闭时才自动重连
+                        if (!isReconnecting && remote && !isUserDisconnected) {
+                            Log.d(TAG, "连接意外断开，准备自动重连...");
                             isReconnecting = true;
                             mainHandler.postDelayed(() -> {
                                 isReconnecting = false;
                                 WebSocketManager.this.connect(serverUrl, token, enableToken);
                             }, RECONNECT_DELAY);
+                        } else if (isUserDisconnected) {
+                            Log.d(TAG, "用户主动断开，不自动重连");
                         }
                     });
                 }
@@ -344,6 +353,11 @@ public class WebSocketManager {
     }
 
     public void disconnect() {
+        Log.d(TAG, "正在断开WebSocket连接...");
+        
+        // 标记为用户主动断开，禁止自动重连
+        isUserDisconnected = true;
+        
         // 停止消息处理器
         stopMessageProcessor();
         
@@ -352,9 +366,19 @@ public class WebSocketManager {
             messageQueue.clear();
         }
         
-        if (client != null && client.isOpen()) {
-            client.close();
+        if (client != null) {
+            if (client.isOpen()) {
+                client.close();
+                Log.d(TAG, "WebSocket关闭请求已发送");
+            }
+            // 立即清空client引用，确保isConnected()立即返回false
+            client = null;
         }
+        
+        // 注意：不要在这里移除监听器，让onClose回调能正常通知UI更新
+        // 监听器在onClose处理完成后再移除
+        
+        Log.d(TAG, "WebSocket已断开");
     }
 
     public boolean isConnected() {
