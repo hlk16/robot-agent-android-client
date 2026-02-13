@@ -61,11 +61,13 @@ public class NavigationBackgroundService extends Service {
     private String lastNavigationError = null;
     
     // Binder用于与Activity通信
-    private final IBinder binder = new NavigationBinder();
+    // 改为静态内部类，防止持有外部 Service 引用导致内存泄漏
+    private static final IBinder binder = new NavigationBinder();
     
-    public class NavigationBinder extends Binder {
+    public static class NavigationBinder extends Binder {
         public NavigationBackgroundService getService() {
-            return NavigationBackgroundService.this;
+            // 返回 null 而不是持有引用，避免内存泄漏
+            return null;
         }
     }
     
@@ -122,7 +124,18 @@ public class NavigationBackgroundService extends Service {
         // 清理导航管理器
         if (naviManager != null) {
             naviManager.stopNavi();
+            naviManager = null;
         }
+        
+        // 清理定位管理器
+        if (locationManager != null) {
+            locationManager = null;
+        }
+        
+        // 清理 Binder 引用
+        // 由于 Binder 现在是静态的，不需要置空
+        
+        Log.d(TAG, "NavigationBackgroundService 资源已释放");
     }
     
     /**

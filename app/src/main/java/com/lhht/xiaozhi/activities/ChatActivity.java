@@ -5,6 +5,7 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import java.lang.ref.WeakReference;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -118,7 +119,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private double destinationLng = 0.0;
     private boolean hasDestinationCoordinates = false;
     
-    // 性能监控类
+    // 性能监控类 - 改为静态内部类，使用 WeakReference 防止内存泄漏
     private static class PerformanceMonitor {
         private Choreographer.FrameCallback frameCallback;
         private long lastFrameTimeNanos = 0;
@@ -126,11 +127,11 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         private long fpsUpdateTimeNanos = 0;
         private float currentFPS = 0;
         private boolean isMonitoring = false;
-        private final ChatActivity activity;
+        private final WeakReference<ChatActivity> activityRef;
         private Handler handler;
         
         public PerformanceMonitor(ChatActivity activity) {
-            this.activity = activity;
+            this.activityRef = new WeakReference<>(activity);
             this.handler = new Handler(Looper.getMainLooper());
         }
         
@@ -179,12 +180,28 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             
             if (frameCallback != null) {
                 Choreographer.getInstance().removeFrameCallback(frameCallback);
+                frameCallback = null;
             }
+            
+            // 清理 Handler，防止内存泄漏
+            if (handler != null) {
+                handler.removeCallbacksAndMessages(null);
+                handler = null;
+            }
+            
+            // 清空 Activity 引用
+            activityRef.clear();
             
             Log.d("ChatPerformanceMonitor", "性能监控已停止");
         }
         
         private void logPerformanceMetrics(long frameTimeNanos) {
+            // 使用 WeakReference 获取 Activity，避免内存泄漏
+            ChatActivity activity = activityRef.get();
+            if (activity == null) {
+                return;
+            }
+            
             // 记录FPS
             Log.d("ChatPerformanceMonitor", String.format("当前FPS: %.2f", currentFPS));
             
@@ -1484,10 +1501,28 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     protected void onDestroy() {
         super.onDestroy();
         
+        // ===== 清理 Handler，防止内存泄漏 =====
+        if (mainHandler != null) {
+            mainHandler.removeCallbacksAndMessages(null);
+            mainHandler = null;
+        }
+        if (navigationUpdateHandler != null) {
+            navigationUpdateHandler.removeCallbacksAndMessages(null);
+            navigationUpdateHandler = null;
+        }
+        if (detectionUpdateHandler != null) {
+            detectionUpdateHandler.removeCallbacksAndMessages(null);
+            detectionUpdateHandler = null;
+        }
+        
         // 停止性能监控
         if (performanceMonitor != null) {
             performanceMonitor.stopMonitoring();
+            performanceMonitor = null;
         }
+        
+        // 清理 WebRTC 监听器引用
+        webRTCListener = null;
         
         disconnect();
         if (client != null) {
@@ -1497,9 +1532,11 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         // 清理WebRTC资源
         if (webRTCManager != null) {
             webRTCManager.close();
+            webRTCManager = null;
         }
         if (signalingClient != null) {
             signalingClient.close();
+            signalingClient = null;
         }
         
         // 清理导航服务

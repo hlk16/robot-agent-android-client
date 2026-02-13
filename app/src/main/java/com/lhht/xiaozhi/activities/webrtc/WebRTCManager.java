@@ -55,6 +55,7 @@ public class WebRTCManager {
     }
     
     private Context context;
+    private Context applicationContext;
     private WebRTCListener listener;
     //这是WebRTC中的一个核心类，用于创建PeerConnection实例
     private PeerConnectionFactory peerConnectionFactory;
@@ -74,14 +75,16 @@ public class WebRTCManager {
     //WebRTCManager的构造函数
     public WebRTCManager(Context context, WebRTCListener listener) {
         this.context = context;
+        this.applicationContext = context.getApplicationContext();  // 使用 ApplicationContext 避免泄漏
         this.listener = listener;
         initializePeerConnectionFactory();
     }
     //PeerConnectionFactory，它是WebRTC库中的一个核心组件，
     // 用于创建和管理对等连接（PeerConnection），以实现实时通信功能，如视频通话和实时视频流。
     private void initializePeerConnectionFactory() {
+        // 使用 ApplicationContext 避免内存泄漏
         PeerConnectionFactory.InitializationOptions initializationOptions =
-                PeerConnectionFactory.InitializationOptions.builder(context)
+                PeerConnectionFactory.InitializationOptions.builder(applicationContext)
                         .setEnableInternalTracer(true)
                         .createInitializationOptions();
         PeerConnectionFactory.initialize(initializationOptions);
@@ -264,8 +267,8 @@ public class WebRTCManager {
     //从摄像头捕获视频流
     private VideoCapturer createCameraCapturer() {
         CameraEnumerator enumerator;
-        if (Camera2Enumerator.isSupported(context)) {
-            enumerator = new Camera2Enumerator(context);
+        if (Camera2Enumerator.isSupported(applicationContext)) {
+            enumerator = new Camera2Enumerator(applicationContext);
         } else {
             enumerator = new Camera1Enumerator(true);
         }
@@ -579,6 +582,26 @@ public class WebRTCManager {
     }
     
     public void close() {
+        // 1. 先关闭 PeerConnection，停止所有媒体流
+        if (peerConnection != null) {
+            peerConnection.close();
+            peerConnection = null;
+        }
+        
+        // 2. 释放本地媒体流（必须先于 track 释放）
+        if (localStream != null) {
+            // 从 stream 中移除所有 track，避免 native 层持有引用
+            if (localVideoTrack != null) {
+                localStream.removeTrack(localVideoTrack);
+            }
+            if (localAudioTrack != null) {
+                localStream.removeTrack(localAudioTrack);
+            }
+            localStream.dispose();
+            localStream = null;
+        }
+        
+        // 3. 释放音视频轨道
         if (localVideoTrack != null) {
             localVideoTrack.dispose();
             localVideoTrack = null;
@@ -589,6 +612,7 @@ public class WebRTCManager {
             localAudioTrack = null;
         }
         
+        // 4. 停止并释放摄像头捕获器
         if (videoCapturer != null) {
             try {
                 videoCapturer.stopCapture();
@@ -599,6 +623,7 @@ public class WebRTCManager {
             videoCapturer = null;
         }
         
+        // 5. 释放音视频源
         if (videoSource != null) {
             videoSource.dispose();
             videoSource = null;
@@ -609,22 +634,35 @@ public class WebRTCManager {
             audioSource = null;
         }
         
-        if (peerConnection != null) {
-            peerConnection.close();
-            peerConnection = null;
-        }
-        
+        // 6. 释放视图
         if (localVideoView != null) {
             localVideoView.release();
+            localVideoView = null;
         }
         
         if (remoteVideoView != null) {
             remoteVideoView.release();
+            remoteVideoView = null;
         }
         
+        // 7. 释放 EGL 上下文
         if (eglBase != null) {
             eglBase.release();
+            eglBase = null;
         }
+        
+        // 8. 释放 PeerConnectionFactory（关键：释放 native 层的 WebRtcAudioRecord）
+        if (peerConnectionFactory != null) {
+            peerConnectionFactory.dispose();
+            peerConnectionFactory = null;
+        }
+        
+        // 9. 清空 Context 引用，避免内存泄漏
+        context = null;
+        applicationContext = null;
+        listener = null;
+        
+        Log.d(TAG, "WebRTC 资源已完全释放");
     }
     //用于在WebRTC连接过程中，处理信令状态变化，ICE连接状态变化，
     // ICE收集状态变化，ICE候选被移除，添加远程流，移除远程流等事件$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$

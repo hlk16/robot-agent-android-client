@@ -98,4 +98,7 @@ dependencies {
     implementation ("com.tencent.map:tencent-map-nav-surport:1.1.0.1")
     implementation ("com.squareup.okhttp3:okhttp:4.12.0")
     implementation ("com.google.code.gson:gson:2.10.1")
+    
+    // LeakCanary - 内存泄漏检测（仅 debug 版本）
+    debugImplementation("com.squareup.leakcanary:leakcanary-android:2.12")
 }
