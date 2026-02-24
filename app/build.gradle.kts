@@ -77,7 +77,16 @@ dependencies {
     
     // ConstraintLayout
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    
+
+    // CameraX
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+
+    // Guava for ListenableFuture
+    implementation("com.google.guava:guava:32.1.3-android")
+
     // Lifecycle
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.7.0")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.7.0")

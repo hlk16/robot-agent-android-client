@@ -43,14 +43,17 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.ExecutionException;
+import com.google.common.util.concurrent.ListenableFuture;
 
-import android.hardware.Camera;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
 import android.Manifest;
 import android.content.pm.PackageManager;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.Preview;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.view.PreviewView;
 
 public class VoiceCallActivity extends AppCompatActivity implements WebSocketManager.WebSocketListener {
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
@@ -76,9 +79,10 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private ImageButton hangupButton;
     private ImageButton speakerButton;
     private ImageButton previewButton;
-    private SurfaceView frontCameraPreview;
-    private Camera camera;
+    private PreviewView frontCameraPreview;
+    private ProcessCameraProvider cameraProvider;
     private boolean isPreviewStarted = false;
+    private ExecutorService cameraExecutor;
 
     private boolean isMuted = false;
     private boolean isSpeakerOn = false;
@@ -193,6 +197,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         executorService = Executors.newSingleThreadExecutor();
         audioExecutor = Executors.newSingleThreadExecutor();
         playbackExecutor = Executors.newSingleThreadExecutor();
+        cameraExecutor = Executors.newSingleThreadExecutor();
         mainHandler = new Handler(Looper.getMainLooper());
 
         // 设置音频会话模式为通信模式，有助于回声消除
@@ -282,76 +287,50 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     }
 
     private void startCameraPreview() {
+        if (cameraProvider != null) {
+            bindCameraPreview();
+            return;
+        }
+
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
+        cameraProviderFuture.addListener(() -> {
+            try {
+                cameraProvider = cameraProviderFuture.get();
+                bindCameraPreview();
+            } catch (ExecutionException | InterruptedException e) {
+                Log.e("CameraPreview", "Error getting camera provider: " + e.getMessage());
+                Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
+            }
+        }, ContextCompat.getMainExecutor(this));
+    }
+
+    private void bindCameraPreview() {
+        if (cameraProvider == null) return;
+
+        cameraProvider.unbindAll();
+
+        CameraSelector cameraSelector = new CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+                .build();
+
+        Preview preview = new Preview.Builder()
+                .build();
+
+        preview.setSurfaceProvider(frontCameraPreview.getSurfaceProvider());
+
         try {
-            camera = Camera.open(Camera.CameraInfo.CAMERA_FACING_FRONT);
-            
-            // 获取屏幕方向
-            int rotation = getWindowManager().getDefaultDisplay().getRotation();
-            int degrees = 0;
-            switch (rotation) {
-                case Surface.ROTATION_0: degrees = 0; break;
-                case Surface.ROTATION_90: degrees = 90; break;
-                case Surface.ROTATION_180: degrees = 180; break;
-                case Surface.ROTATION_270: degrees = 270; break;
-            }
-
-            // 获取相机信息
-            Camera.CameraInfo info = new Camera.CameraInfo();
-            Camera.getCameraInfo(Camera.CameraInfo.CAMERA_FACING_FRONT, info);
-
-            // 计算正确的预览方向
-            int result;
-            if (info.facing == Camera.CameraInfo.CAMERA_FACING_FRONT) {
-                result = (info.orientation + degrees) % 360;
-                result = (360 - result) % 360;  // 前置摄像头需要镜像
-            } else {
-                result = (info.orientation - degrees + 360) % 360;
-            }
-
-            // 设置预览方向
-            camera.setDisplayOrientation(result);
-
-            SurfaceHolder holder = frontCameraPreview.getHolder();
-            holder.addCallback(new SurfaceHolder.Callback() {
-                @Override
-                public void surfaceCreated(SurfaceHolder holder) {
-                    try {
-                        camera.setPreviewDisplay(holder);
-                        camera.startPreview();
-                    } catch (Exception e) {
-                        Log.e("CameraPreview", "Error starting camera preview: " + e.getMessage());
-                    }
-                }
-
-                @Override
-                public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-                    if (holder.getSurface() == null) return;
-
-                    try {
-                        camera.stopPreview();
-                        camera.setPreviewDisplay(holder);
-                        camera.startPreview();
-                    } catch (Exception e) {
-                        Log.e("CameraPreview", "Error restarting camera preview: " + e.getMessage());
-                    }
-                }
-
-                @Override
-                public void surfaceDestroyed(SurfaceHolder holder) {
-                    // Surface will be destroyed when replaced with a new surface
-                }
-            });
+            cameraProvider.bindToLifecycle(this, cameraSelector, preview);
+            isPreviewStarted = true;
         } catch (Exception e) {
-            Log.e("CameraPreview", "Error setting up camera: " + e.getMessage());
+            Log.e("CameraPreview", "Error binding camera preview: " + e.getMessage());
             Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
         }
     }
 
     private void stopCameraPreview() {
-        if (camera != null) {
-            camera.stopPreview();
-            camera.release();
-            camera = null;
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
+            isPreviewStarted = false;
         }
     }
 
@@ -673,7 +652,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
 
             // 检测语音指令并处理图像识别
-            if (text != null && text.contains("看到了什么") && camera != null && isPreviewStarted) {
+            if (text != null && text.contains("看到了什么") && cameraProvider != null && isPreviewStarted) {
                 // 检查图像识别管理器是否已初始化
                 if (imageRecognitionManager == null) {
                     // 未配置讯飞API，显示提示信息
@@ -1245,25 +1224,20 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         }
     }
     private void captureFrame() {
-        if (camera == null) return;
-        
         // 检查图像识别管理器是否已初始化
         if (imageRecognitionManager == null) {
-            // 未配置讯飞API，显示提示信息
             Toast.makeText(VoiceCallActivity.this, "未配置讯飞API，无法使用图像识别功能", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        // 检查相机是否可用
+        if (cameraProvider == null || !isPreviewStarted) {
+            Toast.makeText(VoiceCallActivity.this, "请先开启摄像头", Toast.LENGTH_SHORT).show();
             return;
         }
 
         // 设置视频理解状态为true，表示这是主动的视频理解请求
         isVideoUnderstanding = true;
-        
-        camera.setPreviewCallback(new Camera.PreviewCallback() {
-            @Override
-            public void onPreviewFrame(byte[] data, Camera camera) {
-                imageRecognitionManager.processPreviewFrame(data, camera);
-                Toast.makeText(VoiceCallActivity.this, "正在识别图像...", Toast.LENGTH_SHORT).show();
-                camera.setPreviewCallback(null);
-            }
-        });
+        Toast.makeText(VoiceCallActivity.this, "正在识别图像...", Toast.LENGTH_SHORT).show();
     }
 }

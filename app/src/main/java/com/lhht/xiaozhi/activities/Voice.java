@@ -28,6 +28,8 @@ import android.media.MediaRecorder;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.NoiseSuppressor;
 import android.net.Uri;
+
+import java.nio.ByteBuffer;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 import android.os.Bundle;
@@ -58,15 +60,21 @@ import vip.inode.demo.opusaudiodemo.utils.OpusUtils;
 import org.json.JSONObject;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutionException;
+import com.google.common.util.concurrent.ListenableFuture;
 import java.lang.ref.WeakReference;
 
-import android.hardware.Camera;
-import android.view.SurfaceHolder;
-import android.view.SurfaceView;
 import android.Manifest;
 import android.content.pm.PackageManager;
+
+import androidx.camera.core.ImageProxy;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.Preview;
+import androidx.camera.lifecycle.ProcessCameraProvider;
+import androidx.camera.view.PreviewView;
 
 import android.view.Choreographer;
 import android.os.Build;
@@ -111,9 +119,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private ImageButton hangupButton;
     private ImageButton speakerButton;
     private ImageButton previewButton;
-    private SurfaceView frontCameraPreview;
-    private Camera camera;
+    private PreviewView frontCameraPreview;
+    private ProcessCameraProvider cameraProvider;
     private boolean isPreviewStarted = false;
+    private ExecutorService cameraExecutor;
 
     private boolean isMuted = false;
     private boolean isSpeakerOn = false;
@@ -415,6 +424,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         executorService = Executors.newSingleThreadExecutor();
         audioExecutor = Executors.newSingleThreadExecutor();
         playbackExecutor = Executors.newSingleThreadExecutor();
+        cameraExecutor = Executors.newSingleThreadExecutor();
         mainHandler = new Handler(Looper.getMainLooper());
 
         // 设置音频会话模式为通信模式，有助于回声消除
@@ -504,51 +514,58 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     //相机启动摄像头预览
     private void startCameraPreview() {
+        if (cameraProvider != null) {
+            // 已经初始化过相机，直接绑定并启动
+            bindCameraPreview();
+            return;
+        }
+
+        // 首次获取 CameraProvider
+        ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
+        cameraProviderFuture.addListener(() -> {
+            try {
+                cameraProvider = cameraProviderFuture.get();
+                bindCameraPreview();
+            } catch (ExecutionException | InterruptedException e) {
+                Log.e("CameraPreview", "Error getting camera provider: " + e.getMessage());
+                Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
+            }
+        }, ContextCompat.getMainExecutor(this));
+    }
+
+    private void bindCameraPreview() {
+        if (cameraProvider == null) return;
+
+        // 取消之前绑定的所有用例
+        cameraProvider.unbindAll();
+
+        // 设置前置摄像头
+        CameraSelector cameraSelector = new CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+                .build();
+
+        // 创建预览用例
+        Preview preview = new Preview.Builder()
+                .build();
+
+        // 将预览画面连接到 PreviewView
+        preview.setSurfaceProvider(frontCameraPreview.getSurfaceProvider());
+
         try {
-            camera = Camera.open(Camera.CameraInfo.CAMERA_FACING_FRONT);
-            camera.setDisplayOrientation(90);
-            
-            SurfaceHolder holder = frontCameraPreview.getHolder();
-            holder.addCallback(new SurfaceHolder.Callback() {
-                @Override
-                public void surfaceCreated(SurfaceHolder holder) {
-                    try {
-                        camera.setPreviewDisplay(holder);
-                        camera.startPreview();
-                    } catch (Exception e) {
-                        Log.e("CameraPreview", "Error starting camera preview: " + e.getMessage());
-                    }
-                }
-
-                @Override
-                public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-                    if (holder.getSurface() == null) return;
-                    
-                    try {
-                        camera.stopPreview();
-                        camera.setPreviewDisplay(holder);
-                        camera.startPreview();
-                    } catch (Exception e) {
-                        Log.e("CameraPreview", "Error restarting camera preview: " + e.getMessage());
-                    }
-                }
-
-                @Override
-                public void surfaceDestroyed(SurfaceHolder holder) {
-                    // Surface will be destroyed when replaced with a new surface
-                }
-            });
+            // 绑定用例到生命周期
+            cameraProvider.bindToLifecycle(this, cameraSelector, preview);
+            isPreviewStarted = true;
         } catch (Exception e) {
-            Log.e("CameraPreview", "Error setting up camera: " + e.getMessage());
+            Log.e("CameraPreview", "Error binding camera preview: " + e.getMessage());
             Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
         }
     }
+
     //停止摄像头预览
     private void stopCameraPreview() {
-        if (camera != null) {
-            camera.stopPreview();
-            camera.release();
-            camera = null;
+        if (cameraProvider != null) {
+            cameraProvider.unbindAll();
+            isPreviewStarted = false;
         }
     }
 
@@ -891,7 +908,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
             
             // 检测语音指令并处理图像识别
-            if (text != null && text.contains("看到了什么") && camera != null && isPreviewStarted) {
+            if (text != null && text.contains("看到了什么") && cameraProvider != null && isPreviewStarted) {
                 // 检查图像识别管理器是否已初始化
                 if (imageRecognitionManager == null) {
                     // 未配置讯飞API，显示提示信息
@@ -1576,8 +1593,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     //相机识别
     private void captureFrame() {
-        if (camera == null) return;
-        
+        if (cameraProvider == null) {
+            Toast.makeText(this, "相机未启动", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
         // 检查图像识别管理器是否已初始化
         if (imageRecognitionManager == null) {
             // 未配置讯飞API，显示提示信息
@@ -1588,13 +1608,77 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         // 设置视频理解状态为true，表示这是主动的视频理解请求
         isVideoUnderstanding = true;
 
-        camera.setPreviewCallback(new Camera.PreviewCallback() {
-            @Override
-            public void onPreviewFrame(byte[] data, Camera camera) {
-                imageRecognitionManager.processPreviewFrame(data, camera);
-                Toast.makeText(Voice.this, "正在识别图像...", Toast.LENGTH_SHORT).show();
-                camera.setPreviewCallback(null);
+        // 使用 ImageAnalysis 获取预览帧
+        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build();
+
+        imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {
+            // 转换为 YUV 格式
+            byte[] yuvData = imageProxyToYuv420(imageProxy);
+
+            if (yuvData != null) {
+                // 调用处理方法（需要 Camera 参数来获取尺寸）
+                // 由于 CameraX 不再使用 Camera 对象，我们创建一个简单的包装
+                final int width = imageProxy.getWidth();
+                final int height = imageProxy.getHeight();
+
+                // 在主线程调用图像识别
+                runOnUiThread(() -> {
+                    // 使用反射或直接创建一个虚拟 Camera 对象来获取尺寸
+                    // 这里我们直接处理
+                    try {
+                        // 将 ImageProxy 转换为兼容格式
+                        imageRecognitionManager.processPreviewFrameFromCameraX(yuvData, width, height);
+                        Toast.makeText(Voice.this, "正在识别图像...", Toast.LENGTH_SHORT).show();
+                    } catch (Exception e) {
+                        Log.e("CameraPreview", "图像处理失败: " + e.getMessage());
+                    }
+                });
             }
+
+            // 关闭 ImageProxy 以释放资源
+            imageProxy.close();
+
+            // 取消分析，只处理一帧
+            imageAnalysis.clearAnalyzer();
         });
+
+        // 重新绑定用例，添加 ImageAnalysis
+        CameraSelector cameraSelector = new CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+                .build();
+
+        cameraProvider.unbindAll();
+        Preview preview = new Preview.Builder().build();
+        preview.setSurfaceProvider(frontCameraPreview.getSurfaceProvider());
+
+        try {
+            cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis);
+        } catch (Exception e) {
+            Log.e("CameraPreview", "绑定相机失败: " + e.getMessage());
+        }
+    }
+
+    // 将 ImageProxy 转换为 YUV420 格式
+    private byte[] imageProxyToYuv420(ImageProxy imageProxy) {
+        ImageProxy.PlaneProxy[] planes = imageProxy.getPlanes();
+        if (planes.length < 3) return null;
+
+        ByteBuffer yBuffer = planes[0].getBuffer();
+        ByteBuffer uBuffer = planes[1].getBuffer();
+        ByteBuffer vBuffer = planes[2].getBuffer();
+
+        int ySize = yBuffer.remaining();
+        int uSize = uBuffer.remaining();
+        int vSize = vBuffer.remaining();
+
+        byte[] yuv = new byte[ySize + uSize + vSize];
+
+        yBuffer.get(yuv, 0, ySize);
+        vBuffer.get(yuv, ySize, vSize);
+        uBuffer.get(yuv, ySize + vSize, uSize);
+
+        return yuv;
     }
 }

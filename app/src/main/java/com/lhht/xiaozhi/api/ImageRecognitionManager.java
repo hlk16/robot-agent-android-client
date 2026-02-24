@@ -3,6 +3,7 @@ package com.lhht.xiaozhi.api;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import android.graphics.YuvImage;
 import android.hardware.Camera;
@@ -159,6 +160,45 @@ public class ImageRecognitionManager {
                 callback.onRecognitionError("图像处理失败: " + e.getMessage());
             }
         }
+    }
+
+    // CameraX 版本：处理来自 CameraX 的 YUV 数据
+    public void processPreviewFrameFromCameraX(byte[] data, int width, int height) {
+        try {
+            byte[] processedImageData = convertYuvToJpeg(data, width, height);
+            if (processedImageData != null) {
+                recognizeImage(processedImageData);
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "处理预览帧失败", e);
+            if (callback != null) {
+                callback.onRecognitionError("图像处理失败: " + e.getMessage());
+            }
+        }
+    }
+
+    private byte[] convertYuvToJpeg(byte[] data, int width, int height) throws IOException {
+        YuvImage yuv = new YuvImage(data, ImageFormat.NV21, width, height, null);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        yuv.compressToJpeg(new Rect(0, 0, width, height), 85, out);
+
+        byte[] imageBytes = out.toByteArray();
+        if (imageBytes.length > 2 * 1024 * 1024) {
+            Bitmap bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.length);
+            out.reset();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 70, out);
+            imageBytes = out.toByteArray();
+
+            if (imageBytes.length > 2 * 1024 * 1024) {
+                out.reset();
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 50, out);
+                imageBytes = out.toByteArray();
+                bitmap.recycle();
+            }
+        }
+
+        return imageBytes;
     }
 
     private byte[] convertPreviewFrameToJpeg(byte[] data, Camera camera) throws IOException {

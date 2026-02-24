@@ -7,7 +7,7 @@
     android:fitsSystemWindows="true">
 
     <!-- 前置摄像头预览 -->
-    <SurfaceView
+    <androidx.camera.view.PreviewView
         android:id="@+id/frontCameraPreview"
         android:layout_width="120dp"
         android:layout_height="160dp"
