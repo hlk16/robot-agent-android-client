@@ -1,11 +1,13 @@
 package com.lhht.xiaozhi.settings;
 
 import android.content.Context;
-import android.content.SharedPreferences;
+import com.tencent.mmkv.MMKV;
+import org.json.JSONArray;
+import org.json.JSONException;
+import java.util.HashSet;
 import java.util.Set;
 
 public class SettingsManager {
-    private static final String PREF_NAME = "xiaozhi_settings";
     private static final String KEY_WS_URL = "ws_url";
     private static final String KEY_TOKEN = "token";
     private static final String KEY_ENABLE_TOKEN = "enable_token";
@@ -13,60 +15,69 @@ public class SettingsManager {
     private static final String KEY_APP_ID = "app_id";
     private static final String KEY_API_KEY = "api_key";
     private static final String KEY_API_SECRET = "api_secret";
-    
-    private final SharedPreferences preferences;
-    
+
+    private final MMKV mmkv;
+
     public SettingsManager(Context context) {
-        preferences = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE);
+        MMKV.initialize(context);
+        mmkv = MMKV.defaultMMKV();
     }
-    
+
     public void saveSettings(String wsUrl, String token, boolean enableToken) {
-        preferences.edit()
-                .putString(KEY_WS_URL, wsUrl)
-                .putString(KEY_TOKEN, token)
-                .putBoolean(KEY_ENABLE_TOKEN, enableToken)
-                .apply();
+        mmkv.encode(KEY_WS_URL, wsUrl);
+        mmkv.encode(KEY_TOKEN, token);
+        mmkv.encode(KEY_ENABLE_TOKEN, enableToken);
     }
 
     public void saveWsUrls(Set<String> urls) {
-        preferences.edit()
-                .putStringSet(KEY_WS_URLS, urls)
-                .apply();
+        JSONArray jsonArray = new JSONArray(urls);
+        mmkv.encode(KEY_WS_URLS, jsonArray.toString());
     }
 
     public void saveApiSettings(String appId, String apiKey, String apiSecret) {
-        preferences.edit()
-                .putString(KEY_APP_ID, appId)
-                .putString(KEY_API_KEY, apiKey)
-                .putString(KEY_API_SECRET, apiSecret)
-                .apply();
+        mmkv.encode(KEY_APP_ID, appId);
+        mmkv.encode(KEY_API_KEY, apiKey);
+        mmkv.encode(KEY_API_SECRET, apiSecret);
     }
-    
+
     public String getWsUrl() {
-        return preferences.getString(KEY_WS_URL, "ws://localhost:9005");
+        return mmkv.decodeString(KEY_WS_URL, "ws://localhost:9005");
     }
-    
+
     public String getToken() {
-        return preferences.getString(KEY_TOKEN, "test-token");
+        return mmkv.decodeString(KEY_TOKEN, "test-token");
     }
-    
+
     public boolean isTokenEnabled() {
-        return preferences.getBoolean(KEY_ENABLE_TOKEN, true);
+        return mmkv.decodeBool(KEY_ENABLE_TOKEN, true);
     }
 
     public Set<String> getWsUrls() {
-        return preferences.getStringSet(KEY_WS_URLS, null);
+        String jsonStr = mmkv.decodeString(KEY_WS_URLS, null);
+        if (jsonStr == null || jsonStr.isEmpty()) {
+            return null;
+        }
+        try {
+            JSONArray jsonArray = new JSONArray(jsonStr);
+            Set<String> urls = new HashSet<>();
+            for (int i = 0; i < jsonArray.length(); i++) {
+                urls.add(jsonArray.getString(i));
+            }
+            return urls;
+        } catch (JSONException e) {
+            return null;
+        }
     }
 
     public String getAppId() {
-        return preferences.getString(KEY_APP_ID, "");
+        return mmkv.decodeString(KEY_APP_ID, "");
     }
 
     public String getApiKey() {
-        return preferences.getString(KEY_API_KEY, "");
+        return mmkv.decodeString(KEY_API_KEY, "");
     }
 
     public String getApiSecret() {
-        return preferences.getString(KEY_API_SECRET, "");
+        return mmkv.decodeString(KEY_API_SECRET, "");
     }
 }

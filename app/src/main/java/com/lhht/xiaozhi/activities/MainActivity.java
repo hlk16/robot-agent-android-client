@@ -6,22 +6,18 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
-import android.media.AudioManager;
 import android.media.AudioRecord;
 import android.media.AudioTrack;
-import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.Trace;
-import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
-import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -31,7 +27,6 @@ import androidx.core.content.ContextCompat;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.drawerlayout.widget.DrawerLayout;
-import androidx.fragment.app.Fragment;
 
 import com.google.android.material.navigation.NavigationView;
 import androidx.appcompat.app.AlertDialog;
@@ -45,7 +40,6 @@ import com.lhht.xiaozhi.websocket.WebSocketManager;
 import vip.inode.demo.opusaudiodemo.utils.OpusUtils;
 
 import org.json.JSONObject;
-import org.json.JSONException;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -54,7 +48,6 @@ import android.view.Choreographer;
 import android.os.Build;
 import android.app.ActivityManager;
 import android.content.Context;
-import android.os.Debug;
 import android.view.Display;
 import android.view.WindowManager;
 
@@ -473,10 +466,19 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         initViews();
         Trace.endSection();
         
-        // 3. 延迟初始化SDK（后台线程）
+        // 3. 延迟初始化SDK和Native库（后台线程）
         new Thread(() -> {
             Trace.beginSection("MainActivity.initSDK");
             long sdkStart = System.currentTimeMillis();
+            
+            // 预加载Native库（在后台线程触发类加载，避免阻塞主线程）
+            try {
+                Class.forName("vip.inode.demo.opusaudiodemo.utils.OpusUtils");
+                Log.d("XiaoZhiPerf", "OpusUtils类预加载完成");
+            } catch (ClassNotFoundException e) {
+                Log.e("XiaoZhiPerf", "OpusUtils类加载失败", e);
+            }
+            
             initSDK();
             Log.d("XiaoZhiPerf", "SDK初始化耗时: " + (System.currentTimeMillis() - sdkStart) + "ms");
             Trace.endSection();
@@ -500,8 +502,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             // 延迟初始化音频组件（懒加载模式）
             initAudioComponents();
             
-            performanceMonitor = new PerformanceMonitor(this);
-            performanceMonitor.startMonitoring();
+            // performanceMonitor = new PerformanceMonitor(this);
+            // performanceMonitor.startMonitoring();
             Trace.endSection();
         }, 100);
         
@@ -540,7 +542,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         if (sendButton != null) sendButton.setOnClickListener(v -> sendMessage());
         if (settingsButton != null) settingsButton.setOnClickListener(v -> openSettings());
         menuButton.setOnClickListener(view -> {
-            Intent intent = new Intent(MainActivity.this, menu.class);
+            Intent intent = new Intent(MainActivity.this, MenuActivity.class);
             startActivity(intent);
         });
     }

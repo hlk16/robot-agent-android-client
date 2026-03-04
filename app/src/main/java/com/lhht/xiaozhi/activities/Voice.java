@@ -325,11 +325,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         // 4. 初始化主线程Handler
         mainHandler = new Handler(Looper.getMainLooper());
         
-        // 5. 延迟初始化性能监控
-        mainHandler.postDelayed(() -> {
-            performanceMonitor = new PerformanceMonitor(this);
-            performanceMonitor.startMonitoring();
-        }, 50);
+        // 5. 延迟初始化性能监控（已禁用）
+        // mainHandler.postDelayed(() -> {
+        //     performanceMonitor = new PerformanceMonitor(this);
+        //     performanceMonitor.startMonitoring();
+        // }, 50);
         
         // 6. 设置监听器（轻量，可立即执行）
         setupListeners();
@@ -1350,6 +1350,18 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             imageRecognitionManager = null;
         }
         
+        // 11. 释放音频焦点 - 关键：防止内存泄漏
+        abandonAudioFocus();
+        audioFocusChangeListener = null;
+        
+        // 12. 恢复默认音频模式
+        try {
+            AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
+            audioManager.setMode(AudioManager.MODE_NORMAL);
+        } catch (Exception e) {
+            Log.e("Voice", "恢复音频模式失败", e);
+        }
+        
         Log.d("Voice", "onDestroy 执行完成");
         super.onDestroy();
     }
@@ -1446,31 +1458,49 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
      }
     
     private void initAudioFocusListener() {
-        audioFocusChangeListener = new AudioManager.OnAudioFocusChangeListener() {
-            @Override
-            public void onAudioFocusChange(int focusChange) {
-                switch (focusChange) {
-                    case AudioManager.AUDIOFOCUS_GAIN:
-                        // 重新获得音频焦点，恢复播放
-                        if (audioTrack != null && !isPlaying) {
-                            audioTrack.play();
-                            isPlaying = true;
-                        }
-                        break;
-                    case AudioManager.AUDIOFOCUS_LOSS:
-                    case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
-                        // 失去音频焦点，暂停播放
-                        if (audioTrack != null && isPlaying) {
-                            audioTrack.pause();
-                            isPlaying = false;
-                        }
-                        break;
-                    case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
-                        // 可以降低音量继续播放
-                        break;
-                }
+        // 使用静态内部类 + WeakReference 防止内存泄漏
+        audioFocusChangeListener = new AudioFocusChangeListener(this);
+    }
+    
+    /**
+     * 静态内部类，避免隐式持有外部 Activity 引用
+     */
+    private static class AudioFocusChangeListener implements AudioManager.OnAudioFocusChangeListener {
+        private final WeakReference<Voice> activityRef;
+        
+        public AudioFocusChangeListener(Voice activity) {
+            this.activityRef = new WeakReference<>(activity);
+        }
+        
+        @Override
+        public void onAudioFocusChange(int focusChange) {
+            Voice activity = activityRef.get();
+            if (activity == null) {
+                // Activity 已被回收，直接返回
+                return;
             }
-        };
+            
+            switch (focusChange) {
+                case AudioManager.AUDIOFOCUS_GAIN:
+                    // 重新获得音频焦点，恢复播放
+                    if (activity.audioTrack != null && !activity.isPlaying) {
+                        activity.audioTrack.play();
+                        activity.isPlaying = true;
+                    }
+                    break;
+                case AudioManager.AUDIOFOCUS_LOSS:
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                    // 失去音频焦点，暂停播放
+                    if (activity.audioTrack != null && activity.isPlaying) {
+                        activity.audioTrack.pause();
+                        activity.isPlaying = false;
+                    }
+                    break;
+                case AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                    // 可以降低音量继续播放
+                    break;
+            }
+        }
     }
     
     private void requestAudioFocus() {

@@ -69,7 +69,7 @@
             android:name=".activities.Voice"
             android:exported="false" />
         <activity
-            android:name=".activities.menu"
+            android:name=".activities.MenuActivity"
             android:exported="false" />
         <activity
             android:name=".activities.BluetoothActivity"

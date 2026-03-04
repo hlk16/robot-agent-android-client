@@ -110,4 +110,7 @@ dependencies {
     
     // LeakCanary - 内存泄漏检测（仅 debug 版本）
     debugImplementation("com.squareup.leakcanary:leakcanary-android:2.12")
+
+    // MMKV - 高性能 key-value 存储
+    implementation(libs.mmkv)
 }

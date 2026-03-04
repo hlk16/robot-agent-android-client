@@ -14,7 +14,7 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import com.lhht.xiaozhi.R;
 
-public class menu extends AppCompatActivity {
+public class MenuActivity extends AppCompatActivity {
     private TextView mtext;
     private Button mtableRobot;
     private Button mnbIot;
@@ -51,12 +51,12 @@ public class menu extends AppCompatActivity {
 //                Toast.makeText(this, "请先连接", Toast.LENGTH_SHORT).show();
 //                return;
 //            }
-            Intent intent = new Intent(menu.this, BluetoothActivity.class);
+            Intent intent = new Intent(MenuActivity.this, BluetoothActivity.class);
             startActivity(intent);
         });
         mnbIot.setOnClickListener(view -> {
             //跳转到物联网界面
-            Intent intent = new Intent(menu.this, NBIOTActivity.class);
+            Intent intent = new Intent(MenuActivity.this, NBIOTActivity.class);
             startActivity(intent);
         });
         more.setOnClickListener(view -> {
@@ -77,15 +77,23 @@ public class menu extends AppCompatActivity {
 //            startActivity(intent);
 //        });
         chat.setOnClickListener(view -> {
-            Intent intent = new Intent(menu.this, ChatActivity.class);
+            Intent intent = new Intent(MenuActivity.this, ChatActivity.class);
             startActivity(intent);
         });
 //        video.setOnClickListener(view -> {
 //            Intent intent = new Intent(menu.this, video.class);
 //            startActivity(intent);
 //        });
-
     }
 
-
+//    @Override
+//    protected void onDestroy() {
+//        super.onDestroy();
+//        // 清理所有点击监听器，防止内存泄漏
+//        mtableRobot.setOnClickListener(null);
+//        mnbIot.setOnClickListener(null);
+//        more.setOnClickListener(null);
+//        manus.setOnClickListener(null);
+//        chat.setOnClickListener(null);
+//    }
 }
