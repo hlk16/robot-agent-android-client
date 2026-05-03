@@ -4,7 +4,7 @@
 
 
 <p align="center">
-  <img src="568ff11d32c41188b26edb2539f2323a.png" alt="小智AI助手界面预览" width="300"/>
+  <img src="页面展示.png" alt="小智AI助手界面预览" width="300"/>
 </p>
 
 [查看源软件演示视频](https://m.bilibili.com/video/BV19QPHeHEJm?buvid=XU9C15B983E5B3201C25FDE381B1F1C4C33D5&from_spmid=dt.space-dt.video.0&is_story_h5=false&mid=5zOL0pVwHX2%2BpSNDC91few%3D%3D&p=1&plat_id=114&share_from=ugc&share_medium=android&share_plat=android&share_session_id=8f4e8fb2-fbc5-41ad-b488-fdbb2423aed4&share_source=WEIXIN&share_tag=s_i&spmid=united.player-video-detail.0.0&timestamp=1740629989&unique_k=CR9irtn&up_id=1145920831)
