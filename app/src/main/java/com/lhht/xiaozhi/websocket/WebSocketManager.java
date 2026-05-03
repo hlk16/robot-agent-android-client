@@ -125,7 +125,7 @@ public class WebSocketManager {
         return listenerRef != null ? listenerRef.get() : null;
     }
     
-    // 启动消息处理器
+    // 启动消息处理器，用于发送消息队列中的消息，控制发送频率
     private void startMessageProcessor() {
         if (isProcessingQueue.compareAndSet(false, true)) {
             messageExecutor.submit(() -> {

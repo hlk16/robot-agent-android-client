@@ -76,23 +76,10 @@ import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
 
-import android.view.Choreographer;
-import android.os.Build;
-import android.app.ActivityManager;
-import android.content.Context;
-import android.os.Debug;
-import android.view.Display;
-import android.view.WindowManager;
-
 public class Voice extends AppCompatActivity implements WebSocketManager.WebSocketListener {
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
     private VideoView videoView;
     
-    // 性能监控相关
-    private PerformanceMonitor performanceMonitor;
-    private long lastFrameTimeNanos = 0;
-    private long frameCount = 0;
-    private long fpsUpdateTimeNanos = 0;
     //音频录制参数Vertex16000
     private static final int SAMPLE_RATE = 16000;
     //声道配置 CHANNEL_IN_MONO 表示单声道输入。
@@ -160,13 +147,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private ImageRecognitionManager imageRecognitionManager;
     private boolean isVideoUnderstanding = false; // 标识是否正在进行视频理解
     
-    // 用于计算端到端延迟的时间记录
-    private long lastAudioUploadTime = 0;
-    private long lastLogTime = 0;
     private long speechStartTime = 0; // 记录用户开始说话的时间
-//    private int frameCount = 0;
-    private long totalLatencySum = 0;
-    private int latencySampleCount = 0;
     
     // 复用的缓冲区，避免频繁创建数组
     // ⚠️ 注意：音频播放数据不能复用（会放入队列异步处理），波形显示数据可以复用
@@ -177,126 +158,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     // 回声消除和噪声抑制
     private AcousticEchoCanceler echoCanceler;
     private NoiseSuppressor noiseSuppressor;
-    
-    // 性能监控类 - 使用 WeakReference 防止内存泄漏
-    private static class PerformanceMonitor {
-        private Choreographer.FrameCallback frameCallback;
-        private long lastFrameTimeNanos = 0;
-        private long frameCount = 0;
-        private long fpsUpdateTimeNanos = 0;
-        private float currentFPS = 0;
-        private boolean isMonitoring = false;
-        private WeakReference<Voice> activityRef;  // 使用弱引用
-        private Handler handler;
-        
-        public PerformanceMonitor(Voice activity) {
-            this.activityRef = new WeakReference<>(activity);
-            this.handler = new Handler(Looper.getMainLooper());
-        }
-        
-        public void startMonitoring() {
-            if (isMonitoring) return;
-            
-            isMonitoring = true;
-            lastFrameTimeNanos = System.nanoTime();
-            fpsUpdateTimeNanos = lastFrameTimeNanos;
-            frameCount = 0;
-            
-            frameCallback = new Choreographer.FrameCallback() {
-                @Override
-                public void doFrame(long frameTimeNanos) {
-                    if (!isMonitoring) return;
-                    
-                    frameCount++;
-                    
-                    // 每秒更新一次FPS
-                    long elapsedNanos = frameTimeNanos - fpsUpdateTimeNanos;
-                    if (elapsedNanos >= 1_000_000_000) { // 1秒
-                        currentFPS = (frameCount * 1_000_000_000.0f) / elapsedNanos;
-                        frameCount = 0;
-                        fpsUpdateTimeNanos = frameTimeNanos;
-                        
-                        // 在主线程中记录FPS和其他性能指标
-                        handler.post(() -> {
-                            logPerformanceMetrics(frameTimeNanos);
-                        });
-                    }
-                    
-                    lastFrameTimeNanos = frameTimeNanos;
-                    
-                    // 注册下一帧
-                    Choreographer.getInstance().postFrameCallback(this);
-                }
-            };
-            
-            Choreographer.getInstance().postFrameCallback(frameCallback);
-            Log.d("VoicePerformanceMonitor", "性能监控已启动");
-        }
-        
-        public void stopMonitoring() {
-            if (!isMonitoring) return;
-            isMonitoring = false;
-            
-            if (frameCallback != null) {
-                Choreographer.getInstance().removeFrameCallback(frameCallback);
-            }
-            
-            Log.d("VoicePerformanceMonitor", "性能监控已停止");
-        }
-        
-        private void logPerformanceMetrics(long frameTimeNanos) {
-            Voice activity = activityRef.get();
-            if (activity == null) {
-                // Activity 已被回收，停止监控
-                stopMonitoring();
-                return;
-            }
-            
-            // 记录FPS
-            Log.d("VoicePerformanceMonitor", String.format("当前FPS: %.2f", currentFPS));
-            
-            // 记录内存使用情况
-            ActivityManager activityManager = (ActivityManager) activity.getSystemService(Context.ACTIVITY_SERVICE);
-            ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
-            activityManager.getMemoryInfo(memoryInfo);
-            
-            // 获取应用内存使用
-            Runtime runtime = Runtime.getRuntime();
-            long usedMemory = runtime.totalMemory() - runtime.freeMemory();
-            long maxMemory = runtime.maxMemory();
-            float memoryUsagePercent = (usedMemory * 100.0f) / maxMemory;
-            
-            Log.d("VoicePerformanceMonitor", String.format("内存使用: %dMB / %dMB (%.1f%%)", 
-                usedMemory / (1024 * 1024), maxMemory / (1024 * 1024), memoryUsagePercent));
-            
-            // 记录系统可用内存
-            Log.d("VoicePerformanceMonitor", String.format("系统可用内存: %dMB", 
-                memoryInfo.availMem / (1024 * 1024)));
-            
-            // 记录屏幕刷新率（如果API 23+）
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                WindowManager wm = (WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
-                Display display = wm.getDefaultDisplay();
-                if (display != null) {
-                    float refreshRate = display.getRefreshRate();
-                    Log.d("VoicePerformanceMonitor", String.format("屏幕刷新率: %.1f Hz", refreshRate));
-                }
-            }
-            
-            // 记录应用是否处于低内存状态
-            if (memoryInfo.lowMemory) {
-                Log.w("VoicePerformanceMonitor", "系统处于低内存状态");
-            }
-        }
-        
-        public float getCurrentFPS() {
-            return currentFPS;
-        }
-        
-        public boolean isMonitoring() {
-            return isMonitoring;
-        }
-    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -325,13 +186,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         // 4. 初始化主线程Handler
         mainHandler = new Handler(Looper.getMainLooper());
         
-        // 5. 延迟初始化性能监控（已禁用）
-        // mainHandler.postDelayed(() -> {
-        //     performanceMonitor = new PerformanceMonitor(this);
-        //     performanceMonitor.startMonitoring();
-        // }, 50);
-        
-        // 6. 设置监听器（轻量，可立即执行）
+        // 5. 设置监听器（轻量，可立即执行）
         setupListeners();
         
         // 7. 延迟初始化音频组件（后台线程，避免阻塞UI）
@@ -678,8 +533,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             try {
                 // 记录音频上传开始时间
                 long uploadStartTime = System.currentTimeMillis();
-                // 记录这次上传时间用于计算端到端延迟
-                lastAudioUploadTime = uploadStartTime;
                 Log.d("VoiceCall-Audio", "开始上传音频数据: " + size + " bytes, 时间戳: " + uploadStartTime);
                 
                 // 将byte[]转换为short[]
@@ -1186,27 +1039,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     long pcmReadyTime = System.currentTimeMillis();
                     Log.d("VoiceCall-Audio", "PCM数据准备完成: " + pcmData.length + " bytes, 从接收到现在总耗时: " + (pcmReadyTime - receiveStartTime) + "ms");
                     
-                    // 计算从音频上传到接收的总延迟
-                    long totalLatency = pcmReadyTime - lastAudioUploadTime;
-                    
-                    // 累计延迟数据用于统计
-                    totalLatencySum += totalLatency;
-                    latencySampleCount++;
-                    
-                    // 每秒输出一次延迟统计，而不是每一帧都输出
-                    long currentTime = System.currentTimeMillis();
-                    if (currentTime - lastLogTime >= 1000) {
-                        if (latencySampleCount > 0) {
-                            long avgLatency = totalLatencySum / latencySampleCount;
-                            Log.d("VoiceCall-Latency", String.format("平均延迟统计: %dms (基于%d个音频帧，采样周期1秒)", avgLatency, latencySampleCount));
-                            
-                            // 重置统计
-                            totalLatencySum = 0;
-                            latencySampleCount = 0;
-                            lastLogTime = currentTime;
-                        }
-                    }
-                    
                     // 将音频数据放入队列，由专门的播放线程处理
                     if (audioQueue != null) {
                         boolean offered = audioQueue.offer(pcmData);
@@ -1234,10 +1066,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     @Override
     protected void onPause() {
         super.onPause();
-        // 停止性能监控
-        if (performanceMonitor != null) {
-            performanceMonitor.stopMonitoring();
-        }
         // 停止摄像头预览（释放相机资源）
         stopCameraPreview();
         isPreviewStarted = false;
@@ -1253,10 +1081,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     @Override
     protected void onResume() {
         super.onResume();
-        // 重新启动性能监控
-        if (performanceMonitor != null) {
-            performanceMonitor.startMonitoring();
-        }
     }
     
     @Override
@@ -1268,13 +1092,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             mainHandler.removeCallbacksAndMessages(null);
         }
         
-        // 2. 停止性能监控
-        if (performanceMonitor != null) {
-            performanceMonitor.stopMonitoring();
-            performanceMonitor = null;
-        }
-        
-        // 3. 先发送结束消息再断开连接（同步操作）
+        // 2. 先发送结束消息再断开连接（同步操作）
         if (webSocketManager != null) {
             try {
                 if (webSocketManager.isConnected()) {
@@ -1404,13 +1222,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                      long playbackStartTime = System.currentTimeMillis();
                      Log.d("AudioPlayback", "从队列取出音频数据: " + pcmData.length + " bytes, 开始播放时间戳: " + playbackStartTime);
                      
-                     // 计算从音频上传到开始播放的总延迟
-                     long totalLatencyToPlayback = playbackStartTime - lastAudioUploadTime;
-                     // 只记录异常高的延迟（超过200ms）
-                     if (totalLatencyToPlayback > 200) {
-                         Log.w("VoiceCall-Latency", "高延迟检测: " + totalLatencyToPlayback + "ms (从上传开始到实际播放)");
-                     }
-                     
                      // 确保AudioTrack已初始化
                      if (audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
                          initAudioTrack();
@@ -1431,12 +1242,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                          
                          // 记录音频写入完成时间
                          long writeCompleteTime = System.currentTimeMillis();
-                         long finalLatency = writeCompleteTime - lastAudioUploadTime;
-                         frameCount++;
-                         // 每100帧输出一次最终延迟，减少日志量
-                         if (frameCount % 100 == 0) {
-                             Log.d("VoiceCall-Latency", "最终延迟采样: " + finalLatency + "ms (从上传开始到写入AudioTrack完成)");
-                         }
+                         Log.d("VoiceCall-Audio", "音频写入完成: " + bytesWritten + " bytes, 时间戳: " + writeCompleteTime);
                      }
                  } catch (InterruptedException e) {
                      Log.d("AudioPlayback", "播放线程被中断");
