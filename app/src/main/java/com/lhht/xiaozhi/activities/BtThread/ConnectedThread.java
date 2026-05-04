@@ -3,129 +3,107 @@ package com.lhht.xiaozhi.activities.BtThread;
 import android.bluetooth.BluetoothSocket;
 import android.util.Log;
 
-
-import com.lhht.xiaozhi.activities.VoiceCallActivity;
-
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 
-//连接了蓝牙设备建立通信之后的数据交互线程类
-public class ConnectedThread extends Thread{
-    String lastX, lastY;
-    BluetoothSocket bluetoothSocket=null;
-    InputStream inputStream=null;//获取输入数据
-    OutputStream outputStream=null;//获取输出数据
-    int[] lastData=new int[]{0,0};
-    private boolean isRunning = true;
-    public ConnectedThread(BluetoothSocket bluetoothSocket){
-        this.bluetoothSocket=bluetoothSocket;
-        //先新建暂时的Stream
-        InputStream inputTemp=null;
-        OutputStream outputTemp=null;
+/**
+ * 蓝牙数据通信线程
+ * 负责收发数据，不依赖任何 Activity
+ */
+public class ConnectedThread extends Thread {
+    private static final String TAG = "ConnectedThread";
+
+    private final BluetoothSocket socket;
+    private final InputStream inputStream;
+    private final OutputStream outputStream;
+    private final OnDataReceivedListener listener;
+    private volatile boolean running = true;
+
+    public ConnectedThread(BluetoothSocket socket, OnDataReceivedListener listener) {
+        this.socket = socket;
+        this.listener = listener;
+
+        InputStream tmpIn = null;
+        OutputStream tmpOut = null;
+
         try {
-            inputTemp=this.bluetoothSocket.getInputStream();
-            outputTemp=this.bluetoothSocket.getOutputStream();
+            tmpIn = socket.getInputStream();
+            tmpOut = socket.getOutputStream();
         } catch (IOException e) {
-            try {
-                bluetoothSocket.close();//出错就关闭线程吧
-            } catch (IOException ex) {}
+            Log.e(TAG, "获取流失败", e);
         }
-        inputStream=inputTemp;
-        outputStream=outputTemp;
+
+        inputStream = tmpIn;
+        outputStream = tmpOut;
     }
 
     @Override
     public void run() {
-        super.run();
-        while(true){
-            //发送数据
+        byte[] buffer = new byte[1024];
+        int bytes;
 
-            //蓝牙对应硬件控制说明
-            //硬件为esp32接收蓝牙单个字符
-            //1.前进-a
-            //2.后退-b
-            //3.左转-c
-            //4.右转-d
-            //5.停止-e
-            //以上通过语音控制
+        Log.d(TAG, "数据通信线程已启动");
 
-            if (VoiceCallActivity.order == 'a') {
-                btWriteString("a");
-                VoiceCallActivity.order = 'x';
-            }
-            else if (VoiceCallActivity.order == 'b') {
-                btWriteString("b");
-                VoiceCallActivity.order = 'x';
-            }else if (VoiceCallActivity.order == 'c') {
-                btWriteString("c");
-                VoiceCallActivity.order = 'x';
-            }
-            else if (VoiceCallActivity.order == 'd') {
-                btWriteString("d");
-                VoiceCallActivity.order = 'x';
-            }
-            else if (VoiceCallActivity.order == 'e') {
-                btWriteString("e");
-                VoiceCallActivity.order = 'x';
-            }
-            else if (VoiceCallActivity.order == 'f') {
-                btWriteString("f");
-                VoiceCallActivity.order = 'x';
-            }else if (VoiceCallActivity.order == 'g') {
-                btWriteString("g");
-                VoiceCallActivity.order = 'x';
-            }else if (VoiceCallActivity.order == 'h') {
-                btWriteString("h");
-                VoiceCallActivity.order = 'x';
-            }else if (VoiceCallActivity.order == 'i') {
-                btWriteString("i");
-                VoiceCallActivity.order = 'x';
-            }
-            
-            // 检查是否有距离值需要发送
-            if (VoiceCallActivity.roadDistance != 0.0) {
-                String distanceString = "DISTANCE:" + VoiceCallActivity.roadDistance;
-                btWriteString(distanceString);
-                Log.d("Bluetooth", "发送距离右侧车道线距离: " + VoiceCallActivity.roadDistance);
-                VoiceCallActivity.roadDistance = 0.0; // 发送后重置为0
-            }
-
-
-        }
-    }
-
-
-
-    public void btWriteInt(int[] intData){
-        for(int sendInt:intData){
+        while (running) {
             try {
-                outputStream.write(sendInt);
-                Log.d("Bluetooth", "成功发送整型: " + sendInt);
+                // 阻塞读取单片机发来的数据
+                if (inputStream != null && (bytes = inputStream.read(buffer)) > 0) {
+                    String data = new String(buffer, 0, bytes);
+                    Log.d(TAG, "收到数据: " + data);
+
+                    if (listener != null) {
+                        listener.onDataReceived(data);
+                    }
+                }
             } catch (IOException e) {
-                Log.e("Bluetooth", "发送失败: " + e.getMessage());
-                e.printStackTrace();
+                Log.e(TAG, "读取失败，连接断开", e);
+                running = false;
+                break;
             }
         }
+
+        Log.d(TAG, "数据通信线程已结束");
     }
 
-    //自定义的发送字符串的函数
-    public void btWriteString(String string){
-        for(byte sendData:string.getBytes()){
-            try {
-                outputStream.write(sendData);
-                Log.d("Bluetooth", "成功发送字节: " + sendData);
-            } catch (IOException e) {
-                Log.e("Bluetooth", "发送失败: " + e.getMessage());
-                e.printStackTrace();
-            }
-        }
-    }
-
-    //自定义的关闭Socket线程的函数
-    public void cancel(){
+    /**
+     * 发送数据
+     */
+    public void write(byte[] data) {
         try {
-            bluetoothSocket.close();
-        } catch (IOException e) {}
+            if (outputStream != null) {
+                outputStream.write(data);
+                outputStream.flush();
+                Log.d(TAG, "发送数据: " + new String(data));
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "发送失败", e);
+        }
+    }
+
+    /**
+     * 发送字符串
+     */
+    public void write(String data) {
+        write(data.getBytes());
+    }
+
+    /**
+     * 停止线程
+     */
+    public void cancel() {
+        running = false;
+        try {
+            socket.close();
+        } catch (IOException e) {
+            Log.e(TAG, "关闭socket失败", e);
+        }
+    }
+
+    /**
+     * 数据接收回调接口
+     */
+    public interface OnDataReceivedListener {
+        void onDataReceived(String data);
     }
 }

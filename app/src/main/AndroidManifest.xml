@@ -105,6 +105,11 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="camera" />
+        <!-- 蓝牙连接服务 -->
+        <service
+            android:name=".services.BluetoothService"
+            android:enabled="true"
+            android:exported="false" />
     </application>
 
 </manifest>
