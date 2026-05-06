@@ -32,33 +32,20 @@
         android:gravity="center"
         android:text="智能家居" />
 
-<!--    <Button-->
-<!--        android:id="@+id/drone"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:text="无人机控制" />-->
-<!--    <Button-->
-<!--        android:id="@+id/navigation"-->
-<!--        android:gravity="center"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:text="导航" />-->
     <Button
         android:id="@+id/chat"
         android:gravity="center"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text="通讯" />
-<!--    <Button-->
-<!--        android:id="@+id/video"-->
-<!--        android:layout_width="match_parent"-->
-<!--        android:layout_height="wrap_content"-->
-<!--        android:text="视频通话" />-->
+
     <Button
         android:id="@+id/manus"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="安卓manus" />
+        android:gravity="center"
+        android:textAllCaps="false"
+        android:text="安卓agent自动化" />
     <Button
         android:id="@+id/morePluge"
         android:gravity="center"

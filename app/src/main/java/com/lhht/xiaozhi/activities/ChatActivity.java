@@ -1,6 +1,7 @@
 package com.lhht.xiaozhi.activities;
 
 import android.Manifest;
+import android.annotation.SuppressLint;
 import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
@@ -107,7 +108,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private double destinationLng = 0.0;
     private boolean hasDestinationCoordinates = false;
     
-    // 蓝牙服务连接回调  活动binder绑定服务必须实现服务连接连接回调，监听服务还活着不
+    // 蓝牙服务连接回调  绑定服务必须实现服务连接连接回调，监听服务还活着不
     private final ServiceConnection btConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
@@ -136,38 +137,24 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
         initViews();
         initWebSocket();
-        iniLoadOpenCV();
         setupClickListeners();
         checkPermissions();
-
+        //拿到主线程的handler
         mainHandler = new Handler(Looper.getMainLooper());
 
-        // 绑定蓝牙服务
+        // 绑定式启动蓝牙服务
         bindService(new Intent(this, BluetoothService.class), btConnection, Context.BIND_AUTO_CREATE);
 
         // 生成唯一的客户端ID
         clientId = "client_" + UUID.randomUUID().toString().substring(0, 8);
         Log.d(TAG, "客户端ID: " + clientId);
-        
-        // 初始化导航服务管理器
-        initNavigationService();
-        
-        // 初始化导航信息更新处理器
-        initNavigationUpdateHandler();
-        
+
         // 初始化检测数据管理器
         dataManager = DataManager.getInstance(this);
-        
+
         // 初始化检测信息更新处理器
         initDetectionUpdateHandler();
-        
-        // 预启动导航服务以减少延迟
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED) {
-            navigationServiceManager.startAndBindService();
-            Log.d(TAG, "预启动导航服务");
-        }
-        
+
         // 处理从SearchNaviActivity传递过来的POI信息
         handlePoiFromSearch();
     }
@@ -227,18 +214,19 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         chatScrollView = findViewById(R.id.chatScrollView);
         setupChatScrollView();
     }
-
+    //子view 事件分发拦截
+    @SuppressLint("ClickableViewAccessibility")
     private void setupChatScrollView() {
         if (chatScrollView != null) {
             chatScrollView.setOnTouchListener(new View.OnTouchListener() {
                 @Override
-                public boolean onTouch(View v, MotionEvent event) {
-                    // 请求父视图不要拦截触摸事件
+                public boolean onTouch(View v, MotionEvent event) {//返回true表示拦截事件，false表示不拦截事件
+                    // 请求父视图不要拦截触摸事件 目标区域触摸开始时：告诉父 View "别抢，让我自己处理"
                     v.getParent().requestDisallowInterceptTouchEvent(true);
                     
                     switch (event.getAction() & MotionEvent.ACTION_MASK) {
                         case MotionEvent.ACTION_UP:
-                        case MotionEvent.ACTION_CANCEL:
+                        case MotionEvent.ACTION_CANCEL://划出目标区域时，允许父视图重新拦截触摸事件
                             // 释放触摸时，允许父视图重新拦截触摸事件
                             v.getParent().requestDisallowInterceptTouchEvent(false);
                             break;
@@ -474,7 +462,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         btnGetUsers.setEnabled(connected);
     }
 
-    private void handleMessage(String message) {
+    private void handleMessage(String message) {//处理json消息类型
         try {
             JSONObject json = new JSONObject(message);
             String type = json.getString("type");
@@ -698,28 +686,34 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
      /**
       * 启动导航服务并导航到指定坐标
       */
-     private void startNavigationToCoordinatesWithService(double latitude, double longitude, String destinationName) {
-         Log.d(TAG, "准备启动导航服务并导航到坐标: " + latitude + ", " + longitude);
-         
-         // 检查定位权限
-         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                 != PackageManager.PERMISSION_GRANTED) {
-             Log.w(TAG, "缺少定位权限");
-             Toast.makeText(this, "需要定位权限才能启动导航", Toast.LENGTH_LONG).show();
-             
-             // 发送权限缺失消息到聊天
-             etMessage.setText("导航启动失败：缺少定位权限，请在设置中授予定位权限后重试");
-             sendChatMessage();
-             etMessage.setText("");
-             
-             ActivityCompat.requestPermissions(this,
-                     new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
+    private void startNavigationToCoordinatesWithService(double latitude, double longitude, String destinationName) {
+        Log.d(TAG, "准备启动导航服务并导航到坐标: " + latitude + ", " + longitude);
+        
+        // 检查定位权限
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            Log.w(TAG, "缺少定位权限");
+            Toast.makeText(this, "需要定位权限才能启动导航", Toast.LENGTH_LONG).show();
+            
+            // 发送权限缺失消息到聊天
+            etMessage.setText("导航启动失败：缺少定位权限，请在设置中授予定位权限后重试");
+            sendChatMessage();
+            etMessage.setText("");
+            
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
                                 Manifest.permission.ACCESS_BACKGROUND_LOCATION},
-                     PERMISSION_REQUEST_CODE);
-             return;
-         }
-         
-         // 启动并绑定导航服务
+                    PERMISSION_REQUEST_CODE);
+            return;
+        }
+        
+        // 懒加载导航服务管理器（仅首次需要时初始化）
+        if (navigationServiceManager == null) {
+            initNavigationService();
+            initNavigationUpdateHandler();
+        }
+        
+        // 启动并绑定导航服务
          if (!navigationServiceManager.isServiceConnected()) {
              // 设置待启动标志和坐标信息，等待服务连接回调
              pendingNavigationStart = true;
@@ -875,7 +869,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             initializeWebRTC();
         }
     }
-
+    //权限申请结果回调，一定要写
     @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -1807,6 +1801,9 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
      * 启动OpenCV图像检测服务
      */
     private void startCameraDetectionService() {
+        // 懒加载 OpenCV（仅首次需要时加载）
+        iniLoadOpenCV();
+
         // 检查摄像头权限
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
