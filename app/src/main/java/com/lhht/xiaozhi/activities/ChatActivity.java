@@ -5,7 +5,6 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import java.lang.ref.WeakReference;
 import android.text.TextUtils;
 import android.util.Log;
 import android.view.MotionEvent;
@@ -17,27 +16,21 @@ import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
-
-import android.view.Choreographer;
-import android.os.Build;
-import android.app.ActivityManager;
-import android.content.Context;
-import android.os.Debug;
-import android.view.Display;
-import android.view.WindowManager;
-
 import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.activities.webrtc.SignalingClient;
 import com.lhht.xiaozhi.activities.webrtc.WebRTCManager;
 import com.lhht.xiaozhi.managers.NavigationServiceManager;
 import com.lhht.xiaozhi.managers.DataManager;
 import com.lhht.xiaozhi.services.CameraDetectionService;
+import android.content.ComponentName;
+import android.content.Context;
 import android.content.Intent;
-
+import android.content.ServiceConnection;
+import android.os.IBinder;
+import com.lhht.xiaozhi.services.BluetoothService;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
@@ -45,14 +38,12 @@ import org.opencv.android.OpenCVLoader;
 import org.webrtc.IceCandidate;
 import org.webrtc.SessionDescription;
 import org.webrtc.SurfaceViewRenderer;
-
 import java.net.URI;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
-
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -64,12 +55,6 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
     private static final String TAG = "ChatActivity";
     private static final int PERMISSION_REQUEST_CODE = 1001;
-    
-    // 性能监控相关
-    private PerformanceMonitor performanceMonitor;
-    private long lastFrameTimeNanos = 0;
-    private long frameCount = 0;
-    private long fpsUpdateTimeNanos = 0;
     
     private EditText etUserId, etNickname, etTargetUser, etMessage, etRoomId, etServerUrl, etWebrtcServerUrl;
     private TextView tvStatus, tvOnlineUsers, tvMessages;
@@ -114,139 +99,29 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private TextView tvDetectionStatus, tvDetectionData;
     private Switch switchImageDetection; // 图像检测开关
     
+    // 蓝牙服务
+    private BluetoothService btService;
+    private boolean btServiceBound = false;
     // POI目的地坐标信息
     private double destinationLat = 0.0;
     private double destinationLng = 0.0;
     private boolean hasDestinationCoordinates = false;
     
-    // 性能监控类 - 改为静态内部类，使用 WeakReference 防止内存泄漏
-    private static class PerformanceMonitor {
-        private Choreographer.FrameCallback frameCallback;
-        private long lastFrameTimeNanos = 0;
-        private long frameCount = 0;
-        private long fpsUpdateTimeNanos = 0;
-        private float currentFPS = 0;
-        private boolean isMonitoring = false;
-        private final WeakReference<ChatActivity> activityRef;
-        private Handler handler;
-        
-        public PerformanceMonitor(ChatActivity activity) {
-            this.activityRef = new WeakReference<>(activity);
-            this.handler = new Handler(Looper.getMainLooper());
+    // 蓝牙服务连接回调  活动binder绑定服务必须实现服务连接连接回调，监听服务还活着不
+    private final ServiceConnection btConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            BluetoothService.LocalBinder binder = (BluetoothService.LocalBinder) service;
+            btService = binder.getService();
+            btServiceBound = true;
         }
-        
-        public void startMonitoring() {
-            if (isMonitoring) return;
-            
-            isMonitoring = true;
-            lastFrameTimeNanos = System.nanoTime();
-            fpsUpdateTimeNanos = lastFrameTimeNanos;
-            frameCount = 0;
-            
-            frameCallback = new Choreographer.FrameCallback() {
-                @Override
-                public void doFrame(long frameTimeNanos) {
-                    if (!isMonitoring) return;
-                    
-                    frameCount++;
-                    
-                    // 每秒更新一次FPS
-                    long elapsedNanos = frameTimeNanos - fpsUpdateTimeNanos;
-                    if (elapsedNanos >= 1_000_000_000) { // 1秒
-                        currentFPS = (frameCount * 1_000_000_000.0f) / elapsedNanos;
-                        frameCount = 0;
-                        fpsUpdateTimeNanos = frameTimeNanos;
-                        
-                        // 在主线程中记录FPS和其他性能指标
-                        handler.post(() -> {
-                            logPerformanceMetrics(frameTimeNanos);
-                        });
-                    }
-                    
-                    lastFrameTimeNanos = frameTimeNanos;
-                    
-                    // 注册下一帧
-                    Choreographer.getInstance().postFrameCallback(this);
-                }
-            };
-            
-            Choreographer.getInstance().postFrameCallback(frameCallback);
-            Log.d("ChatPerformanceMonitor", "性能监控已启动");
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            btServiceBound = false;
+            btService = null;
         }
-        
-        public void stopMonitoring() {
-            if (!isMonitoring) return;
-            isMonitoring = false;
-            
-            if (frameCallback != null) {
-                Choreographer.getInstance().removeFrameCallback(frameCallback);
-                frameCallback = null;
-            }
-            
-            // 清理 Handler，防止内存泄漏
-            if (handler != null) {
-                handler.removeCallbacksAndMessages(null);
-                handler = null;
-            }
-            
-            // 清空 Activity 引用
-            activityRef.clear();
-            
-            Log.d("ChatPerformanceMonitor", "性能监控已停止");
-        }
-        
-        private void logPerformanceMetrics(long frameTimeNanos) {
-            // 使用 WeakReference 获取 Activity，避免内存泄漏
-            ChatActivity activity = activityRef.get();
-            if (activity == null) {
-                return;
-            }
-            
-            // 记录FPS
-            Log.d("ChatPerformanceMonitor", String.format("当前FPS: %.2f", currentFPS));
-            
-            // 记录内存使用情况
-            ActivityManager activityManager = (ActivityManager) activity.getSystemService(Context.ACTIVITY_SERVICE);
-            ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
-            activityManager.getMemoryInfo(memoryInfo);
-            
-            // 获取应用内存使用
-            Runtime runtime = Runtime.getRuntime();
-            long usedMemory = runtime.totalMemory() - runtime.freeMemory();
-            long maxMemory = runtime.maxMemory();
-            float memoryUsagePercent = (usedMemory * 100.0f) / maxMemory;
-            
-            Log.d("ChatPerformanceMonitor", String.format("内存使用: %dMB / %dMB (%.1f%%)", 
-                usedMemory / (1024 * 1024), maxMemory / (1024 * 1024), memoryUsagePercent));
-            
-            // 记录系统可用内存
-            Log.d("ChatPerformanceMonitor", String.format("系统可用内存: %dMB", 
-                memoryInfo.availMem / (1024 * 1024)));
-            
-            // 记录屏幕刷新率（如果API 23+）
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                WindowManager wm = (WindowManager) activity.getSystemService(Context.WINDOW_SERVICE);
-                Display display = wm.getDefaultDisplay();
-                if (display != null) {
-                    float refreshRate = display.getRefreshRate();
-                    Log.d("ChatPerformanceMonitor", String.format("屏幕刷新率: %.1f Hz", refreshRate));
-                }
-            }
-            
-            // 记录应用是否处于低内存状态
-            if (memoryInfo.lowMemory) {
-                Log.w("ChatPerformanceMonitor", "系统处于低内存状态");
-            }
-        }
-        
-        public float getCurrentFPS() {
-            return currentFPS;
-        }
-        
-        public boolean isMonitoring() {
-            return isMonitoring;
-        }
-    }
+    };
 
     // 真机测试配置 - 根据您的网络信息配置
     private static final String SERVER_URL = "ws://192.168.0.102:8009/ws/chat/"; // 真机测试地址
@@ -266,11 +141,10 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         checkPermissions();
 
         mainHandler = new Handler(Looper.getMainLooper());
-        
-        // 初始化性能监控
-        performanceMonitor = new PerformanceMonitor(this);
-        performanceMonitor.startMonitoring();
-        
+
+        // 绑定蓝牙服务
+        bindService(new Intent(this, BluetoothService.class), btConnection, Context.BIND_AUTO_CREATE);
+
         // 生成唯一的客户端ID
         clientId = "client_" + UUID.randomUUID().toString().substring(0, 8);
         Log.d(TAG, "客户端ID: " + clientId);
@@ -516,6 +390,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             webSocket = client.newWebSocket(request, new WebSocketListener() {
                 @Override
                 public void onOpen(WebSocket webSocket, Response response) {
+                    if (mainHandler == null) return;
                     mainHandler.post(() -> {
                         isConnected = true;
                         updateConnectionStatus("已连接", true);
@@ -525,16 +400,19 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
                 @Override
                 public void onMessage(WebSocket webSocket, String text) {
+                    if (mainHandler == null) return;
                     mainHandler.post(() -> handleMessage(text));
                 }
 
                 @Override
                 public void onMessage(WebSocket webSocket, ByteString bytes) {
+                    if (mainHandler == null) return;
                     mainHandler.post(() -> handleMessage(bytes.utf8()));
                 }
 
                 @Override
                 public void onClosing(WebSocket webSocket, int code, String reason) {
+                    if (mainHandler == null) return;
                     mainHandler.post(() -> {
                         isConnected = false;
                         updateConnectionStatus("连接关闭中...", false);
@@ -544,6 +422,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
                 @Override
                 public void onClosed(WebSocket webSocket, int code, String reason) {
+                    if (mainHandler == null) return;
                     mainHandler.post(() -> {
                         isConnected = false;
                         updateConnectionStatus("已断开", false);
@@ -553,6 +432,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
 
                 @Override
                 public void onFailure(WebSocket webSocket, Throwable t, Response response) {
+                    if (mainHandler == null) return;
                     mainHandler.post(() -> {
                         isConnected = false;
                         updateConnectionStatus("连接失败", false);
@@ -693,27 +573,27 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             startCameraDetectionService();
         }
 
-        // 检测其他命令
+        // 检测其他命令 - 通过蓝牙服务发送指令
         if (content != null && content.contains("前进")) {
-            VoiceCallActivity.order = 'a';
+            if (btServiceBound) btService.sendChar('a');
 //            Toast.makeText(this, "收到前进指令", Toast.LENGTH_SHORT).show();
         } else if (content != null && content.contains("后退")) {
-            VoiceCallActivity.order = 'b';
+            if (btServiceBound) btService.sendChar('b');
 //            Toast.makeText(this, "收到后退指令", Toast.LENGTH_SHORT).show();
         } else if (content != null && content.contains("左转")) {
-            VoiceCallActivity.order = 'c';
+            if (btServiceBound) btService.sendChar('c');
 //            Toast.makeText(this, "收到左转指令", Toast.LENGTH_SHORT).show();
         } else if (content != null && content.contains("右转")) {
-            VoiceCallActivity.order = 'd';
+            if (btServiceBound) btService.sendChar('d');
 //            Toast.makeText(this, "收到右转指令", Toast.LENGTH_SHORT).show();
         }else if (content != null && content.contains("停止")){
-            VoiceCallActivity.order = 'e';
+            if (btServiceBound) btService.sendChar('e');
 //             Toast.makeText(this, "收到停止指令", Toast.LENGTH_SHORT).show();
         }else if (tvCurrentDirection.getText().toString().equals("当前方向：左转") && content != null){
-            VoiceCallActivity.order = 'c';
+            if (btServiceBound) btService.sendChar('c');
 //            Toast.makeText(this, "收到左转指令", Toast.LENGTH_SHORT).show();
         }else if (tvCurrentDirection.getText().toString().equals("当前方向：右转") && content != null){
-            VoiceCallActivity.order = 'd';
+            if (btServiceBound) btService.sendChar('d');
 //            Toast.makeText(this, "收到右转指令", Toast.LENGTH_SHORT).show();
         }
 
@@ -1480,26 +1360,11 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     // WebRTC相关方法结束
 
     @Override
-    protected void onPause() {
-        super.onPause();
-        // 停止性能监控
-        if (performanceMonitor != null) {
-            performanceMonitor.stopMonitoring();
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        // 重新启动性能监控
-        if (performanceMonitor != null) {
-            performanceMonitor.startMonitoring();
-        }
-    }
-
-    @Override
     protected void onDestroy() {
         super.onDestroy();
+        
+        // 先断开 WebSocket 连接，防止回调时 mainHandler 已为 null
+        disconnect();
         
         // ===== 清理 Handler，防止内存泄漏 =====
         if (mainHandler != null) {
@@ -1515,16 +1380,9 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
             detectionUpdateHandler = null;
         }
         
-        // 停止性能监控
-        if (performanceMonitor != null) {
-            performanceMonitor.stopMonitoring();
-            performanceMonitor = null;
-        }
-        
         // 清理 WebRTC 监听器引用
         webRTCListener = null;
         
-        disconnect();
         if (client != null) {
             client.dispatcher().executorService().shutdown();
         }
@@ -1552,6 +1410,13 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         
         // 清理检测更新处理器
         stopDetectionUpdates();
+
+        // 解绑蓝牙服务
+        if (btServiceBound) {
+            unbindService(btConnection);
+            btServiceBound = false;
+            btService = null;
+        }
     }
     
     // ==================== 导航相关方法 ====================
@@ -1661,56 +1526,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         };
     }
     
-    /**
-     * 启动导航到驿站
-     */
-//    private void startNavigationToYizhan() {
-//        Log.d(TAG, "开始启动导航到驿站");
-//
-//        // 检查定位权限
-//        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-//                != PackageManager.PERMISSION_GRANTED) {
-//            Toast.makeText(this, "需要定位权限才能启动导航", Toast.LENGTH_LONG).show();
-//
-//            // 发送权限缺失消息到聊天
-//            etMessage.setText("导航启动失败：缺少定位权限，请在设置中授予定位权限后重试");
-//            sendChatMessage();
-//            etMessage.setText("");
-//
-//            ActivityCompat.requestPermissions(this,
-//                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION,
-//                               Manifest.permission.ACCESS_BACKGROUND_LOCATION},
-//                    PERMISSION_REQUEST_CODE);
-//            return;
-//        }
-//
-//        // 启动并绑定导航服务
-//        if (!navigationServiceManager.isServiceConnected()) {
-//            // 设置待启动标志，等待服务连接回调
-//            pendingNavigationStart = true;
-//            navigationServiceManager.startAndBindService();
-//            Toast.makeText(this, "正在启动导航服务...", Toast.LENGTH_SHORT).show();
-//            Log.d(TAG, "导航服务未连接，正在启动服务并设置待启动标志");
-//
-//            // 设置超时检查，如果5秒后服务仍未连接，则提示失败
-//            mainHandler.postDelayed(() -> {
-//                if (pendingNavigationStart && !navigationServiceManager.isServiceConnected()) {
-//                    pendingNavigationStart = false;
-//                    Toast.makeText(this, "导航服务启动超时，请重试", Toast.LENGTH_LONG).show();
-//
-//                    // 发送服务启动超时消息到聊天
-//                    etMessage.setText("导航服务启动超时，请检查网络连接后重试");
-//                    sendChatMessage();
-//                    etMessage.setText("");
-//
-//                    Log.w(TAG, "导航服务启动超时");
-//                }
-//            }, 5000);
-//        } else {
-//            // 服务已连接，直接启动导航
-//            startNavigationToDestination();
-//        }
-//    }
+
     
     /**
      * 启动导航到目的地
@@ -1845,9 +1661,9 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 
                 // 检测是否到达目的地（距离小于等于50米）
                 if (distanceToDestination <= 50) {
-                    VoiceCallActivity.order = 'e';
-//                    Log.d(TAG, "已到达目的地，距离: " + distanceToDestination + "m，设置order = 'e'");
-                    
+                    if (btServiceBound) btService.sendChar('e');
+//                    Log.d(TAG, "已到达目的地，距离: " + distanceToDestination + "m");
+
                     // 发送"已到达"消息给另外一个客户端
                     etMessage.setText("已到达");
                     sendChatMessage();
@@ -1857,17 +1673,17 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                     stopNavigationUpdates();
                     Toast.makeText(this, "已到达目的地", Toast.LENGTH_SHORT).show();
                 } else {
-                    // 根据导航方向设置VoiceCallActivity.order
+                    // 根据导航方向通过蓝牙服务发送指令
                     if (currentDirection != null) {
                         if (currentDirection.contains("直行") || currentDirection.contains("前进")) {
-                            VoiceCallActivity.order = 'a';
-//                            Log.d(TAG, "导航方向：直行，设置order = 'a'");
+                            if (btServiceBound) btService.sendChar('a');
+//                            Log.d(TAG, "导航方向：直行，发送前进指令");
                         } else if (currentDirection.contains("左转") || currentDirection.contains("左拐")) {
-                            VoiceCallActivity.order = 'c';
-//                            Log.d(TAG, "导航方向：左转，设置order = 'c'");
+                            if (btServiceBound) btService.sendChar('c');
+//                            Log.d(TAG, "导航方向：左转，发送左转指令");
                         } else if (currentDirection.contains("右转") || currentDirection.contains("右拐")) {
-                            VoiceCallActivity.order = 'd';
-//                            Log.d(TAG, "导航方向：右转，设置order = 'd'");
+                            if (btServiceBound) btService.sendChar('d');
+//                            Log.d(TAG, "导航方向：右转，发送右转指令");
                         }
                     }
                 }
@@ -2119,8 +1935,10 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
                 Log.d(TAG, String.format("道路检测 - 距离: %.1f, 状态: %s", 
                     dataManager.getRoadDistance(), dataManager.getRoadStatus()));
                 
-                // 将距离值设置到VoiceCallActivity的静态变量中，用于蓝牙发送
-                VoiceCallActivity.roadDistance = dataManager.getRoadDistance();
+                // 通过蓝牙服务发送距离数据
+                if (btServiceBound) {
+                    btService.sendDistance(dataManager.getRoadDistance());
+                }
             }
         }
     }
