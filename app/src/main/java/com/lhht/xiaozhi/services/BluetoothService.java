@@ -36,7 +36,7 @@ public class BluetoothService extends Service {
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final String CHANNEL_ID = "bluetooth_channel";
     private static final int NOTIFICATION_ID = 1001;
-
+    //binder对象就是BluetoothService.this
     private final IBinder binder = new LocalBinder();
     private BluetoothSocket socket;
     private ConnectedThread connectedThread;
@@ -44,8 +44,8 @@ public class BluetoothService extends Service {
 
     private final MutableLiveData<Boolean> connectionState = new MutableLiveData<>(false);
     private final MutableLiveData<String> receivedData = new MutableLiveData<>();
-
-    public class LocalBinder extends Binder {
+    //activity 调用服务实例方法。要写localBinder
+    public class LocalBinder extends Binder {//绑定类，用于在 Activity 中获取服务实例
         public BluetoothService getService() {
             return BluetoothService.this;
         }
@@ -117,7 +117,7 @@ public class BluetoothService extends Service {
     }
 
     @Override
-    public IBinder onBind(Intent intent) {
+    public IBinder onBind(Intent intent) {//绑定服务
         return binder;
     }
 

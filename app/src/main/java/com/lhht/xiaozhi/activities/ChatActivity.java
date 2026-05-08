@@ -100,7 +100,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private TextView tvDetectionStatus, tvDetectionData;
     private Switch switchImageDetection; // 图像检测开关
     
-    // 蓝牙服务
+    // 蓝牙服务对象
     private BluetoothService btService;
     private boolean btServiceBound = false;
     // POI目的地坐标信息
@@ -108,11 +108,13 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
     private double destinationLng = 0.0;
     private boolean hasDestinationCoordinates = false;
     
-    // 蓝牙服务连接回调  绑定服务必须实现服务连接连接回调，监听服务还活着不
+    // 实现系统提供的服务连接回调  绑定服务必须实现服务连接连接回调，监听服务还活着不
     private final ServiceConnection btConnection = new ServiceConnection() {
         @Override
         public void onServiceConnected(ComponentName name, IBinder service) {
+            //获取蓝牙服务对象
             BluetoothService.LocalBinder binder = (BluetoothService.LocalBinder) service;
+            // 蓝牙服务对象赋值给成员变量
             btService = binder.getService();
             btServiceBound = true;
         }
@@ -142,7 +144,7 @@ public class ChatActivity extends AppCompatActivity implements SignalingClient.S
         //拿到主线程的handler
         mainHandler = new Handler(Looper.getMainLooper());
 
-        // 绑定式启动蓝牙服务
+        // 绑定式启动蓝牙服务  向系统申请蓝牙服务
         bindService(new Intent(this, BluetoothService.class), btConnection, Context.BIND_AUTO_CREATE);
 
         // 生成唯一的客户端ID

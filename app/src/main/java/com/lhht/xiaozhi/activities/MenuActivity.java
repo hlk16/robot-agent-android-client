@@ -42,15 +42,11 @@ public class MenuActivity extends AppCompatActivity {
         more= findViewById(R.id.morePluge);
         manus= findViewById(R.id.manus);
 
-//        navgation=findViewById(R.id.navigation);
+
         chat=findViewById(R.id.chat);
-//        video=findViewById(R.id.video);
+
         mtableRobot.setOnClickListener(view -> {
-//            //跳转到桌面机器人界面
-//            if (!MainActivity.webSocketManager.isConnected()) {
-//                Toast.makeText(this, "请先连接", Toast.LENGTH_SHORT).show();
-//                return;
-//            }
+
             Intent intent = new Intent(MenuActivity.this, BluetoothActivity.class);
             startActivity(intent);
         });
@@ -62,38 +58,17 @@ public class MenuActivity extends AppCompatActivity {
         more.setOnClickListener(view -> {
             Toast.makeText(this, "敬请期待", Toast.LENGTH_SHORT).show();
         });
-//        drone.setOnClickListener(view -> {
-//
-//            Intent intent = new Intent(menu.this, DroneActivity.class);
-//            startActivity(intent);
-//        });
+
         manus.setOnClickListener(view -> {
             Toast.makeText(this, "敬请期待", Toast.LENGTH_SHORT).show();
-//            Intent intent = new Intent(menu.this, NavigationTestActivity.class);
-//            startActivity(intent);
+
         });
-//        navgation.setOnClickListener(view -> {
-//            Intent intent = new Intent(menu.this, WalkNaviActivity.class);
-//            startActivity(intent);
-//        });
+
         chat.setOnClickListener(view -> {
             Intent intent = new Intent(MenuActivity.this, ChatActivity.class);
             startActivity(intent);
         });
-//        video.setOnClickListener(view -> {
-//            Intent intent = new Intent(menu.this, video.class);
-//            startActivity(intent);
-//        });
     }
 
-//    @Override
-//    protected void onDestroy() {
-//        super.onDestroy();
-//        // 清理所有点击监听器，防止内存泄漏
-//        mtableRobot.setOnClickListener(null);
-//        mnbIot.setOnClickListener(null);
-//        more.setOnClickListener(null);
-//        manus.setOnClickListener(null);
-//        chat.setOnClickListener(null);
-//    }
+
 }
