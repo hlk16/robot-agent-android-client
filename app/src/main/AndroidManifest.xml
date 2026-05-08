@@ -47,11 +47,6 @@
         <activity
             android:name=".activities.ChatActivity"
             android:exported="false" />
-        <activity
-            android:name=".activities.WalkNaviActivity"
-            android:exported="false" />
-
-
         <meta-data
             android:name="TencentMapSDK"
             android:value="XIZBZ-KKKLW-PFLRJ-YVMLV-3JANQ-XLF4U" />
