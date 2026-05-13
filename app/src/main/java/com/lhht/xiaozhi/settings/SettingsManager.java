@@ -19,7 +19,6 @@ public class SettingsManager {
     private final MMKV mmkv;
 
     public SettingsManager(Context context) {
-        MMKV.initialize(context);
         mmkv = MMKV.defaultMMKV();
     }
 
@@ -41,7 +40,7 @@ public class SettingsManager {
     }
 
     public String getWsUrl() {
-        return mmkv.decodeString(KEY_WS_URL, "ws://localhost:9005");
+        return mmkv.decodeString(KEY_WS_URL, "wss://api.tenclass.net/xiaozhi/v1/");
     }
 
     public String getToken() {

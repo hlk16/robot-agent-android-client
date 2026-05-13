@@ -1,6 +1,6 @@
 /*┌─────────────────────────────────────────────────────────────────────────────┐
-        │  服务器 → WebSocket → 解码 → 格式转换 → 队列缓冲 → AudioTrack播放          │
-        └─────────────────────────────────────────────────────────────────────────────┘*/
+        │  服务器 → WebSocket下载 → 解码，格式转换 → 队列缓冲 → AudioTrack播放          │
+  └─────────────────────────────────────────────────────────────────────────────┘*/
 /*
 * 步骤	函数	处理内容
 ① 接收	onBinaryMessaopusUtils.decodege(byte[] data) (1062行)	WebSocket 接收 Opus 编码的二进制音频数据
@@ -16,7 +16,7 @@
 
 
 package com.lhht.xiaozhi.activities;
-//这是波奇酱
+
 import android.annotation.SuppressLint;
 import android.content.Intent;
 import android.media.AudioAttributes;
@@ -453,6 +453,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     .put("sample_rate", SAMPLE_RATE)
                     .put("channels", 1)
                     .put("frame_duration", 60));
+            //发送开始通话请求
             webSocketManager.sendMessage(startMessage.toString());
 
             // 开始录音

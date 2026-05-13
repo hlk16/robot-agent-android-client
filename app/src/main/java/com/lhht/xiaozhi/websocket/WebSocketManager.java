@@ -201,6 +201,7 @@ public class WebSocketManager {
             }
 
             URI uri = URI.create(url);
+            //WebSocketClient原生websocket类
             client = new WebSocketClient(uri, headers) {
                 @Override
                 public void onOpen(ServerHandshake handshakedata) {
@@ -213,11 +214,12 @@ public class WebSocketManager {
                         sendHelloMessage();
                     });
                 }
-
+                //重新定义onMessage方法，获取二进制消息
                 @Override
                 public void onMessage(ByteBuffer bytes) {
                     Log.d(TAG, "Received binary message: " + bytes.remaining() + " bytes");
                     byte[] data = new byte[bytes.remaining()];
+                    //
                     bytes.get(data);
                     mainHandler.post(() -> {
                         WebSocketListener listener = getListener();
