@@ -90,8 +90,8 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
 
 
-    //音频播放的缓冲区大小 - 增加缓冲区大小以减少卡顿
-    private static final int PLAY_BUFFER_SIZE = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AUDIO_FORMAT) * 4;
+    //音频播放的缓冲区大小 - 使用最小缓冲区以降低延迟
+    private static final int PLAY_BUFFER_SIZE = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AUDIO_FORMAT) * 1;
     //Opus编码器的帧大小
     private static final int OPUS_FRAME_SIZE = 1440;
 
@@ -534,7 +534,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             try {
                 // 记录音频上传开始时间
                 long uploadStartTime = System.currentTimeMillis();
-                Log.d("VoiceCall-Audio", "开始上传音频数据: " + size + " bytes, 时间戳: " + uploadStartTime);
                 
                 // 将byte[]转换为short[]
                 short[] samples = new short[size / 2];
@@ -552,14 +551,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     
                     // 记录编码完成时间
                     long encodeTime = System.currentTimeMillis();
-                    Log.d("VoiceCall-Audio", "音频编码完成: 原始" + size + " bytes -> 编码后" + encodedSize + " bytes, 耗时: " + (encodeTime - uploadStartTime) + "ms");
                     
                     // 发送音频数据
                     webSocketManager.sendBinaryMessage(encodedBytes);
                     
                     // 记录发送完成时间
                     long sendTime = System.currentTimeMillis();
-                    Log.d("VoiceCall-Audio", "音频数据发送完成, 总耗时: " + (sendTime - uploadStartTime) + "ms");
                 }
             } catch (Exception e) {
                 Log.e("VoiceCall", "发送音频数据失败", e);
@@ -999,7 +996,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
         // 记录音频接收开始时间
         long receiveStartTime = System.currentTimeMillis();
-        Log.d("VoiceCall-Audio", "开始接收服务器音频数据: " + data.length + " bytes, 时间戳: " + receiveStartTime);
 
         // 检查线程池状态，避免在已关闭的线程池中执行任务
         if (audioExecutor == null || audioExecutor.isShutdown() || audioExecutor.isTerminated()) {
@@ -1021,24 +1017,19 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 long decodeStartTime = System.currentTimeMillis();
                 int decodedSamples = opusUtils.decode(decoderHandle, data, decodedBuffer);
                 long decodeEndTime = System.currentTimeMillis();
-                Log.d("VoiceCall-Audio", "音频解码完成: " + data.length + " bytes -> " + decodedSamples + " samples, 耗时: " + (decodeEndTime - decodeStartTime) + "ms");
 
                 if (decodedSamples > 0) {
                     // ⚠️ 音频数据必须创建新数组，因为会被放入队列异步播放
                     // 复用缓冲区会导致数据被覆盖，播放异常
                     byte[] pcmData = new byte[decodedSamples * 2];
                     
-                    for (int i = 0; i < decodedSamples; i++) {
-                        short sample = decodedBuffer[i];
-                        pcmData[i * 2] = (byte) (sample & 0xff);
-                        pcmData[i * 2 + 1] = (byte) ((sample >> 8) & 0xff);
-                    }
+                    // 使用 ByteBuffer 批量转换，比循环快很多，降低延迟
+                    java.nio.ByteBuffer.wrap(pcmData).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(decodedBuffer, 0, decodedSamples);
                     
                     Log.d("AudioDebug", "PCM数据长度: " + pcmData.length + " bytes");
                     
                     // 记录PCM数据准备完成时间
                     long pcmReadyTime = System.currentTimeMillis();
-                    Log.d("VoiceCall-Audio", "PCM数据准备完成: " + pcmData.length + " bytes, 从接收到现在总耗时: " + (pcmReadyTime - receiveStartTime) + "ms");
                     
                     // 将音频数据放入队列，由专门的播放线程处理
                     if (audioQueue != null) {
@@ -1213,8 +1204,8 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
              Log.d("AudioPlayback", "播放线程启动");
              while (isPlaybackThreadRunning) {
                  try {
-                     // 从队列中取出音频数据，使用poll避免无限阻塞
-                     byte[] pcmData = audioQueue.poll(100, java.util.concurrent.TimeUnit.MILLISECONDS);
+                     // 从队列中取出音频数据，降低轮询超时以减少延迟
+                    byte[] pcmData = audioQueue.poll(10, java.util.concurrent.TimeUnit.MILLISECONDS);
                      if (pcmData == null) {
                          continue; // 超时，继续循环检查
                      }
@@ -1243,7 +1234,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                          
                          // 记录音频写入完成时间
                          long writeCompleteTime = System.currentTimeMillis();
-                         Log.d("VoiceCall-Audio", "音频写入完成: " + bytesWritten + " bytes, 时间戳: " + writeCompleteTime);
                      }
                  } catch (InterruptedException e) {
                      Log.d("AudioPlayback", "播放线程被中断");

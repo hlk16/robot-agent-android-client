@@ -20,14 +20,12 @@ import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
-
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.drawerlayout.widget.DrawerLayout;
-
 import com.google.android.material.navigation.NavigationView;
 import androidx.appcompat.app.AlertDialog;
 import android.content.SharedPreferences;
@@ -38,9 +36,7 @@ import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
 import com.lhht.xiaozhi.websocket.WebSocketManager;
 import vip.inode.demo.opusaudiodemo.utils.OpusUtils;
-
 import org.json.JSONObject;
-
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.lang.ref.WeakReference;
@@ -48,9 +44,15 @@ import java.lang.ref.WeakReference;
 public class MainActivity extends AppCompatActivity implements WebSocketManager.WebSocketListener {
     
     private ActivityResultLauncher<String[]> requestPermissionLauncher;
-    
-    private boolean hasPermissions() {
-        for (String permission : REQUIRED_PERMISSIONS) {
+        private static final String[] REQUIRED_PERMISSIONS = new String[]{// 必须请求的权限数组
+            Manifest.permission.RECORD_AUDIO,
+            Manifest.permission.CAMERA,
+            Manifest.permission.MODIFY_AUDIO_SETTINGS,
+            Manifest.permission.BLUETOOTH_CONNECT,
+            Manifest.permission.ACCESS_FINE_LOCATION
+    };
+    private boolean hasPermissions() {// 检查所有权限是否已授予
+        for (String permission : REQUIRED_PERMISSIONS) {// 遍历每一个权限
             if (ContextCompat.checkSelfPermission(this, permission) != PackageManager.PERMISSION_GRANTED) {
                 return false;
             }
@@ -59,11 +61,11 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     }
     
     private void requestPermissions() {
-        requestPermissionLauncher = registerForActivityResult(
-                new ActivityResultContracts.RequestMultiplePermissions(),
-                permissions -> {
-                    boolean allGranted = true;
-                    for (Boolean isGranted : permissions.values()) {
+        requestPermissionLauncher = registerForActivityResult(// 注册权限请求结果回调
+                new ActivityResultContracts.RequestMultiplePermissions(),//告诉系统这是一个 多权限请求 操作
+                permissions -> {//定义权限请求结果的回调函数
+                    boolean allGranted = true;// 假设所有权限都被授予
+                    for (Boolean isGranted : permissions.values()) {// 遍历每个权限的结果
                         if (!isGranted) {
                             allGranted = false;
                             break;
@@ -77,25 +79,19 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
                     }
                 });
         
-        requestPermissionLauncher.launch(REQUIRED_PERMISSIONS);
+        requestPermissionLauncher.launch(REQUIRED_PERMISSIONS);// 请求权限
     }
-    private static final int PERMISSION_REQUEST_CODE = 1;
-    private static final String[] REQUIRED_PERMISSIONS = new String[]{
-            Manifest.permission.RECORD_AUDIO,
-            Manifest.permission.CAMERA,
-            Manifest.permission.MODIFY_AUDIO_SETTINGS,
-            Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.ACCESS_FINE_LOCATION
-    };
+//    private static final int PERMISSION_REQUEST_CODE = 1;// 权限请求码，用于在回调中区分不同的权限请求。
+
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
     private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
-    private static final int PLAY_BUFFER_SIZE = 65536;  // 增大缓冲区到64KB
+    private static final int PLAY_BUFFER_SIZE = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AUDIO_FORMAT);  // 使用最小缓冲区降低延迟
     private static final int OPUS_FRAME_SIZE = 960; // 60ms at 16kHz
     private static final int MAX_QUEUE_SIZE = 5; // 最大消息队列长度
     private static final int MESSAGE_TIMEOUT = 500; // 消息处理超时时间（毫秒）
-    //改掉之前static关键字防止泄露
+
     private WebSocketManager webSocketManager;
     private SettingsManager settingsManager;
     private TextView connectionStatus;
@@ -133,8 +129,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     private SafeHandler mainHandler;
     private final Object messageLock = new Object();
     
-    // 静态Handler，避免内存泄漏
-    private static class SafeHandler extends Handler {
+    // SafeHandler 是基础的线程切换工具，用于在主线程安全地处理消息
+    private static class SafeHandler extends Handler {//这个是给主线程的Handler，
         private final WeakReference<MainActivity> weakRef;
         
         SafeHandler(MainActivity activity) {
@@ -143,7 +139,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         }
         
         @Override
-        public void handleMessage(Message msg) {
+        public void handleMessage(Message msg) {//必须重写一个这个方法，所有sendmessage方法要被这个方法处理
             MainActivity activity = weakRef.get();
             if (activity == null || activity.isFinishing() || activity.isDestroyed()) {
                 return;
@@ -162,7 +158,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
 
     private boolean isAuth = false;
     
-    // 添加一个消息队列类来处理消息顺序
+    // 定义一个TTS消息类，相当于消息队列一个数据包裹类（DTO/Data Class）
     private static class TTSMessage {
         final String text;
         final long timestamp;
@@ -175,11 +171,11 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         }
     }
 
-    // 在类成员变量中添加
+    // UI 线程设置了新消息，但 TTS 线程看到的还是旧值
     private volatile TTSMessage currentTTSMessage = null;
     private volatile String currentSessionId = null;
 
-    // 修改 MessageHandler 类 - 静态内部类避免内存泄漏
+    // MessageHandler 类 - 静态内部类避免内存泄漏，解析消息内容并安全地更新UI
     private static class MessageHandler {
         private static final int MAX_TEXT_LENGTH = 100; // 长文本阈值
         private final WeakReference<MainActivity> weakRef;
@@ -190,16 +186,16 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             this.handlerRef = new WeakReference<>(handler);
         }
         
-        public synchronized void reset() {
+        public synchronized void reset() {// 重置消息处理
             SafeHandler handler = handlerRef.get();
             if (handler != null) {
                 handler.removeCallbacksAndMessages(null);
             }
         }
-        
-        public synchronized void processMessage(String text) {
+        //reset() 和 processMessage() 的互斥锁，确保线程安全处理
+        public synchronized void processMessage(String text) {//子线程处理消息
             if (text == null || text.isEmpty()) return;
-            
+            //拿到弱引用中的activity和handler实例
             MainActivity activity = weakRef.get();
             SafeHandler handler = handlerRef.get();
             if (activity == null || handler == null) return;
@@ -240,7 +236,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             return new String[]{emoji, cleanText};
         }
         
-        private void updateDisplay(String emoji, String text) {
+        private void updateDisplay(String emoji, String text) {// 更新显示
             MainActivity activity = weakRef.get();
             SafeHandler handler = handlerRef.get();
             if (activity == null || handler == null) return;
@@ -281,7 +277,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         }
     }
     
-    private void showFirstTimeDialog() {
+    private void showFirstTimeDialog() {// 显示首次使用提示
         SharedPreferences prefs = getSharedPreferences("app_prefs", MODE_PRIVATE);
         boolean isFirstTime = prefs.getBoolean("is_first_time", true);
         
@@ -314,23 +310,17 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         long startTime = System.currentTimeMillis();
-        Trace.beginSection("MainActivity.onCreate");
         
         super.onCreate(savedInstanceState);
         
         // 1. 先显示UI，让用户感知启动快
-        Trace.beginSection("MainActivity.setContentView");
         setContentView(R.layout.activity_main);
-        Trace.endSection();
         
         // 2. 初始化视图（必须在主线程）
-        Trace.beginSection("MainActivity.initViews");
         initViews();
-        Trace.endSection();
         
         // 3. 延迟初始化SDK和Native库（后台线程）
         new Thread(() -> {
-            Trace.beginSection("MainActivity.initSDK");
             long sdkStart = System.currentTimeMillis();
             
             // 预加载Native库（在后台线程触发类加载，避免阻塞主线程）
@@ -343,10 +333,9 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             
             initSDK();
             Log.d("XiaoZhiPerf", "SDK初始化耗时: " + (System.currentTimeMillis() - sdkStart) + "ms");
-            Trace.endSection();
         }).start();
         
-        // 4. 延迟初始化非关键组件
+        // 4. 延迟初始化非关键组件  "延迟"是 语义上的延迟 （相对于UI初始化）
         mainHandler = new SafeHandler(this);
         messageHandler = new MessageHandler(this, mainHandler);
         settingsManager = new SettingsManager(this);
@@ -357,23 +346,21 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         
         // 5. 延迟初始化线程池和音频（100ms后，避免阻塞UI）
         mainHandler.postDelayed(() -> {
-            Trace.beginSection("MainActivity.initBackground");
-            executorService = Executors.newSingleThreadExecutor();
-            audioExecutor = Executors.newSingleThreadExecutor();
+            executorService = Executors.newSingleThreadExecutor();//通用异步任务处理 录音任务、其他非音频的后台操作
+            audioExecutor = Executors.newSingleThreadExecutor();//音频专用处理 音频播放、音频组件初始化、音频资源释放
             
             // 延迟初始化音频组件（懒加载模式）
             initAudioComponents();
             
-            Trace.endSection();
         }, 100);
         
         // 6. 检查权限（异步）
         if (!hasPermissions()) {
             requestPermissions();
         }
-        checkPermissions();
+//        checkPermissions();
         
-        // 7. 设置监听器
+        // 7. 初始化各种监听器（点击事件、连接状态变化等）  这些监听器会在主线程中执行
         setupListeners();
         
         // 8. 显示首次启动提示（延迟，避免阻塞）
@@ -381,7 +368,6 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         
         long duration = System.currentTimeMillis() - startTime;
         Log.d("XiaoZhiPerf", "MainActivity.onCreate 总耗时: " + duration + "ms");
-        Trace.endSection();
     }
     
     private void initViews() {
@@ -411,10 +397,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
      * 懒加载音频组件 - 第一次使用时才初始化
      */
     private synchronized void initAudioComponents() {
-        if (audioTrack != null) return; // 已初始化则跳过
-        
-        Trace.beginSection("MainActivity.initAudioComponents");
-        long start = System.currentTimeMillis();
+        if (audioTrack != null) return;
         
         try {
             int minBufferSize = AudioTrack.getMinBufferSize(
@@ -424,26 +407,12 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             );
             Log.i("MainActivity", "AudioTrack最小缓冲区: " + minBufferSize + " 字节");
             
-            audioTrack = new AudioTrack.Builder()
-                .setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build())
-                .setAudioFormat(new AudioFormat.Builder()
-                    .setEncoding(AUDIO_FORMAT)
-                    .setSampleRate(SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build())
-                .setBufferSizeInBytes(PLAY_BUFFER_SIZE)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                .build();
+            audioTrack = createAudioTrack();
             
             if (audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
                 Log.i("MainActivity", "AudioTrack初始化成功");
             }
             
-            // 初始化 Opus 编解码器
             opusUtils = OpusUtils.getInstance();
             encoderHandle = opusUtils.createEncoder(SAMPLE_RATE, 1, 10);
             decoderHandle = opusUtils.createDecoder(SAMPLE_RATE, 1);
@@ -453,21 +422,9 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         } catch (Exception e) {
             Log.e("MainActivity", "音频组件初始化失败", e);
         }
-        
-        Log.d("XiaoZhiPerf", "音频组件初始化耗时: " + (System.currentTimeMillis() - start) + "ms");
-        Trace.endSection();
     }
 
-    private void checkPermissions() {
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
-                != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this,
-                    new String[]{Manifest.permission.RECORD_AUDIO},
-                    PERMISSION_REQUEST_CODE);
-        }
-    }
-
-    private void toggleConnection() {
+    private void toggleConnection() {//切换连接状态
         boolean isConnected = webSocketManager.isConnected();
         Log.d("WebSocket", "切换连接状态，当前状态: " + (isConnected ? "已连接" : "未连接"));
         
@@ -505,8 +462,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         Intent intent = new Intent(MainActivity.this, Voice.class);
         startActivity(intent);
     }
-//===
-    private void sendMessage() {
+
+    private void sendMessage() {//发送消息
         String message = messageInput.getText().toString().trim();
         if (!message.isEmpty() && webSocketManager.isConnected()) {
             try {
@@ -530,12 +487,10 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
 
     @Override
     public void onConnected() {
-//        Log.d("WebSocket", "连接成功");
         addLog("WebSocket", "已连接");
-        runOnUiThread(() -> {
+        mainHandler.post(() -> {//更新UI，用于将任务切换到**主线程（UI线程）**执行。更新连接状态和按钮文本
             connectionStatus.setText(getString(R.string.connection_status, getString(R.string.status_connected)));
             connectButton.setText(R.string.disconnect);
-//            Toast.makeText(this, "连接成功", Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -543,11 +498,11 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     public void onDisconnected() {
         Log.d("WebSocket", "连接断开");
         addLog("WebSocket", "已断开");
-        runOnUiThread(() -> {
+        mainHandler.post(() -> {
             connectionStatus.setText(getString(R.string.connection_status, getString(R.string.status_disconnected)));
             connectButton.setText(R.string.connect);
             stopAudioAndReset();
-            Toast.makeText(this, "连接已断开", Toast.LENGTH_SHORT).show();
+            Toast.makeText(MainActivity.this, "连接已断开", Toast.LENGTH_SHORT).show();
         });
     }
 
@@ -583,15 +538,15 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     public void onError(String error) {
         Log.e("WebSocket", "错误: " + error);
         addLog("Error", error);
-        runOnUiThread(() -> {
+        mainHandler.post(() -> {
             connectionStatus.setText(getString(R.string.connection_status, getString(R.string.status_error)));
             connectButton.setText(R.string.connect);
-            Toast.makeText(this, "错误: " + error, Toast.LENGTH_SHORT).show();
+            Toast.makeText(MainActivity.this, "错误: " + error, Toast.LENGTH_SHORT).show();
         });
     }
 
     @Override
-    public void onMessage(String message) {
+    public void onMessage(String message) {//异步接受消息
         try {
             JSONObject jsonMessage = new JSONObject(message);
             String type = jsonMessage.getString("type");
@@ -603,19 +558,18 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             if ("tts".equals(type)) {
                 String sessionId = jsonMessage.optString("session_id");
                 switch (state) {
-                    case "start":
+                    case "start"://新的一个对话
                         // 只重置显示，不清除文本
                         messageHandler.reset();
                         audioExecutor.execute(this::initAudioTrack);
                         break;
                         
-                    case "sentence_start":
+                    case "sentence_start"://新的一个句子
                         if (jsonMessage.has("text")) {
                             String text = jsonMessage.getString("text");
                             // 直接在UI线程更新，跳过所有延迟和队列
-                            runOnUiThread(() -> {
+                            mainHandler.post(() -> {
                                 try {
-                                    // 直接更新UI，不经过MessageHandler的队列
                                     String[] parts = MessageHandler.extractEmojiAndText(text);
                                     if (!parts[0].isEmpty()) {
                                         emojiText.setText(parts[0]);
@@ -677,12 +631,12 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     }
 
     @Override
-    public void onBinaryMessage(byte[] data) {
+    public void onBinaryMessage(byte[] data) {//异步接受二进制音频消息
         if (data == null || data.length == 0) {
             return;
         }
 
-        final byte[] audioData = data.clone();
+        final byte[] audioData = data.clone();//克隆数据，避免修改原始数组
         audioExecutor.execute(() -> {
             try {
                 // 懒加载：确保音频组件已初始化
@@ -701,55 +655,57 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
                 }
 
                 // 解码和播放音频...
-                int decodedSamples = opusUtils.decode(decoderHandle, audioData, decodedBuffer);
+                int decodedSamples = opusUtils.decode(decoderHandle, audioData, decodedBuffer);//解码音频数据，返回解码后的样本数
                 if (decodedSamples <= 0) {
                     return;
                 }
 
-                byte[] pcmData = new byte[decodedSamples * 2];
-                for (int i = 0; i < decodedSamples; i++) {
-                    short sample = decodedBuffer[i];
-                    pcmData[i * 2] = (byte) (sample & 0xff);
-                    pcmData[i * 2 + 1] = (byte) ((sample >> 8) & 0xff);
-                }
-
-                audioTrack.write(pcmData, 0, pcmData.length, AudioTrack.WRITE_BLOCKING);
+                byte[] pcmData = new byte[decodedSamples * 2];//创建PCM数据数组，每个样本2字节
+                // 将解码后的样本数据转换为PCM格式
+                java.nio.ByteBuffer.wrap(pcmData).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(decodedBuffer, 0, decodedSamples);
+                //最终播放PCM音频
+                audioTrack.write(pcmData, 0, pcmData.length, AudioTrack.WRITE_BLOCKING);//将PCM数据写入AudioTrack
             } catch (Exception e) {
                 Log.e("XiaoZhi-Audio", "处理音频数据失败", e);
             }
         });
     }
 
+    private AudioTrack createAudioTrack() {
+        return new AudioTrack.Builder()
+            .setAudioAttributes(new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)//设置音频使用场景为媒体播放
+                .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)//设置音频内容类型为语音
+                .build())
+            .setAudioFormat(new AudioFormat.Builder()
+                .setEncoding(AUDIO_FORMAT)//设置音频编码格式为Opus
+                .setSampleRate(SAMPLE_RATE)//设置采样率为16000Hz
+                .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)//设置音频通道为单声道
+                .build())
+            .setBufferSizeInBytes(PLAY_BUFFER_SIZE)//设置播放缓冲区大小为16000字节
+            .setTransferMode(AudioTrack.MODE_STREAM)//设置音频传输模式为流式
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)//设置音频性能模式为低延迟
+            .build();
+    }
+
     private void initAudioTrack() {
         try {
             if (audioTrack != null) {
                 audioTrack.stop();
-                audioTrack.release();
             }
-            
-            audioTrack = new AudioTrack.Builder()
-                .setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_MEDIA)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build())
-                .setAudioFormat(new AudioFormat.Builder()
-                    .setEncoding(AUDIO_FORMAT)
-                    .setSampleRate(SAMPLE_RATE)
-                    .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
-                    .build())
-                .setBufferSizeInBytes(PLAY_BUFFER_SIZE)
-                .setTransferMode(AudioTrack.MODE_STREAM)
-                .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_LOW_LATENCY)
-                .build();
 
-            if (audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
-                audioTrack.play();
-                isAudioTrackPlaying = true;
-                isAudioTrackPaused = false;
-                isPlaying = true;
-            } else {
-                throw new IllegalStateException("AudioTrack初始化失败");
+            if (audioTrack == null) {
+                audioTrack = createAudioTrack();
             }
+
+            if (audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
+                audioTrack = createAudioTrack();
+            }
+
+            audioTrack.play();
+            isAudioTrackPlaying = true;
+            isAudioTrackPaused = false;
+            isPlaying = true;
         } catch (Exception e) {
             Log.e("XiaoZhi-Audio", "初始化AudioTrack失败: " + e.getMessage());
             isAudioTrackPlaying = false;
@@ -774,10 +730,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     @Override
     protected void onPause() {
         super.onPause();
-        // 移除所有 Handler 回调，防止内存泄漏
-        if (mainHandler != null) {
-            mainHandler.removeCallbacksAndMessages(null);
-        }
+        // 注意：不在 onPause 中清空所有回调，避免误删合法的延迟任务
+        // 清理工作应放在 onDestroy 中
     }
     
     /**
@@ -811,7 +765,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         
         // 安全释放音频资源（移到后台线程）
         if (audioExecutor != null && !audioExecutor.isShutdown()) {
-            audioExecutor.execute(() -> {
+            audioExecutor.execute(() -> {//在后台线程中释放音频资源
                 if (audioRecord != null) {
                     try {
                         audioRecord.stop();
@@ -881,7 +835,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         // 检查API配置是否完整
         if (appId.isEmpty() || apiKey.isEmpty() || apiSecret.isEmpty()) {
             Log.w("SDK", "API配置不完整，请在设置中配置appID、apiKey和apiSecret");
-            runOnUiThread(() -> Toast.makeText(this, "请先在设置中配置API信息", Toast.LENGTH_LONG).show());
+            mainHandler.post(() -> Toast.makeText(MainActivity.this, "请先在设置中配置API信息", Toast.LENGTH_LONG).show());
             return;
         }
         
@@ -898,7 +852,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         if (isAuth) {
 //            runOnUiThread(() -> Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show());
         } else {
-            runOnUiThread(() -> Toast.makeText(this, "SDK初始化失败，请检查API配置", Toast.LENGTH_LONG).show());
+            mainHandler.post(() -> Toast.makeText(MainActivity.this, "SDK初始化失败，请检查API配置", Toast.LENGTH_LONG).show());
         }
     }
 }

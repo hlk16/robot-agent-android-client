@@ -17,9 +17,9 @@ public class SettingsManager {
     private static final String KEY_API_SECRET = "api_secret";
 
     private final MMKV mmkv;
-
+    // 初始化MMKV
     public SettingsManager(Context context) {
-        mmkv = MMKV.defaultMMKV();
+        mmkv = MMKV.defaultMMKV();//默认一个路径为/data/data/包名/mmkv文件
     }
 
     public void saveSettings(String wsUrl, String token, boolean enableToken) {
@@ -30,7 +30,7 @@ public class SettingsManager {
 
     public void saveWsUrls(Set<String> urls) {
         JSONArray jsonArray = new JSONArray(urls);
-        mmkv.encode(KEY_WS_URLS, jsonArray.toString());
+        mmkv.encode(KEY_WS_URLS, jsonArray.toString());//序列化存储·
     }
 
     public void saveApiSettings(String appId, String apiKey, String apiSecret) {
@@ -38,7 +38,7 @@ public class SettingsManager {
         mmkv.encode(KEY_API_KEY, apiKey);
         mmkv.encode(KEY_API_SECRET, apiSecret);
     }
-
+    //获取默认的ws_url
     public String getWsUrl() {
         return mmkv.decodeString(KEY_WS_URL, "wss://api.tenclass.net/xiaozhi/v1/");
     }
@@ -50,14 +50,14 @@ public class SettingsManager {
     public boolean isTokenEnabled() {
         return mmkv.decodeBool(KEY_ENABLE_TOKEN, true);
     }
-
+    //获取自定义的ws_urls
     public Set<String> getWsUrls() {
         String jsonStr = mmkv.decodeString(KEY_WS_URLS, null);
         if (jsonStr == null || jsonStr.isEmpty()) {
             return null;
         }
         try {
-            JSONArray jsonArray = new JSONArray(jsonStr);
+            JSONArray jsonArray = new JSONArray(jsonStr);//反序列化存储的JSONArray字符串
             Set<String> urls = new HashSet<>();
             for (int i = 0; i < jsonArray.length(); i++) {
                 urls.add(jsonArray.getString(i));
