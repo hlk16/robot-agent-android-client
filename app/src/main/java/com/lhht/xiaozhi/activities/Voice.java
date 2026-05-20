@@ -1,5 +1,5 @@
 /*┌─────────────────────────────────────────────────────────────────────────────┐
-        │  服务器 → WebSocket下载 → 解码，格式转换 → 队列缓冲 → AudioTrack播放          │
+  │  服务器 → WebSocket下载 → 解码，格式转换 → 队列缓冲 → AudioTrack播放              │
   └─────────────────────────────────────────────────────────────────────────────┘*/
 /*
 * 步骤	函数	处理内容
@@ -18,7 +18,7 @@
 package com.lhht.xiaozhi.activities;
 
 import android.annotation.SuppressLint;
-import android.content.Intent;
+
 import android.media.AudioAttributes;
 import android.media.AudioFormat;
 import android.media.AudioManager;
@@ -27,7 +27,7 @@ import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.NoiseSuppressor;
-import android.net.Uri;
+
 
 import java.nio.ByteBuffer;
 import java.util.concurrent.BlockingQueue;
@@ -35,8 +35,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.os.Trace;
-import android.provider.Settings;
+import android.os.Message;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageButton;
@@ -50,7 +49,6 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.iflytek.sparkchain.core.SparkChain;
 import com.iflytek.sparkchain.core.SparkChainConfig;
 import com.lhht.xiaozhi.R;
-import com.lhht.xiaozhi.activities.BtThread.ConnectedThread;
 import com.lhht.xiaozhi.api.ImageRecognitionManager;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
@@ -80,20 +78,24 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
     private VideoView videoView;
     
-    //音频录制参数Vertex16000
+    //采样率16000Hz
     private static final int SAMPLE_RATE = 16000;
     //声道配置 CHANNEL_IN_MONO 表示单声道输入。
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
     //音频编码格式 ENCODING_PCM_16BIT 表示16位PCM编码格式。
     private static final int AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT;
-    //音频录制缓冲区大小
+    //物理麦克风音频录制缓冲区大小
     private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
 
 
-    //音频播放的缓冲区大小 - 使用最小缓冲区以降低延迟
+    //物理扬声器音频播放的缓冲区大小 - 使用最小缓冲区以降低延迟
     private static final int PLAY_BUFFER_SIZE = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AUDIO_FORMAT) * 1;
     //Opus编码器的帧大小
     private static final int OPUS_FRAME_SIZE = 1440;
+
+    private static final int MSG_INIT_AUDIO = 1;
+    private static final int MSG_INIT_WEBSOCKET = 2;
+    private static final int MSG_INIT_IMAGE = 3;
 
     private TextView aiMessageText;
     private TextView recognizedText;
@@ -113,19 +115,19 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
     private boolean isMuted = false;
     private boolean isSpeakerOn = false;
-    private boolean isRecording = false;
+    private volatile boolean isRecording = false;
     private boolean isPlaying = false;
     
     // 音频焦点管理
     private AudioManager.OnAudioFocusChangeListener audioFocusChangeListener;
     
     // 音频播放队列
-    private BlockingQueue<byte[]> audioQueue;//阻塞队列
     /*
-    *
     * 启动播放时设为 true，播放线程会循环从 audioQueue 取数据。
     停止播放时设为 false，播放线程检测到状态变化后会退出循环，释放资源。
     * */
+    private BlockingQueue<byte[]> audioQueue;//阻塞队列
+
     private volatile boolean isPlaybackThreadRunning = false;//volatile 修饰的布尔变量，保证多线程下的可见性。作用：作为播放线程的 “运行状态标记”，用于安全地启动、停止播放线程。
     private ExecutorService playbackExecutor;//线程池对象，用于管理播放线程的生命周期。
 
@@ -135,7 +137,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private AudioTrack audioTrack;//Android 系统提供的音频播放核心类，负责将 PCM 音频数据输出到扬声器。
     private ExecutorService executorService;//可以处理其他需要异步执行的任务。
     private ExecutorService audioExecutor;//通常专门处理音频相关的耗时任务，如播放、编码、解码。
-    private Handler mainHandler;
+    private SafeHandler mainHandler;
     //是管理 WebSocket 连接的核心类，负责与服务器建立长连接、收发音频 / 视频数据。它会把编码后的音频数据发送给服务器，同时接收服务器发来的音频数据。
     private WebSocketManager webSocketManager;
     private OpusUtils opusUtils;// 是封装了 Opus 编解码逻辑的工具类。
@@ -155,14 +157,13 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private long lastWaveformUpdate = 0;
     private float[] amplitudeBuffer = new float[OPUS_FRAME_SIZE];  // AI波形显示
     
-    // 回声消除和噪声抑制
+    // 回声消除和噪声抑制硬件AEC
     private AcousticEchoCanceler echoCanceler;
     private NoiseSuppressor noiseSuppressor;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         long startTime = System.currentTimeMillis();
-        Trace.beginSection("Voice.onCreate");
         
         super.onCreate(savedInstanceState);
 
@@ -174,51 +175,28 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         );
 
         // 2. 立即显示UI
-        Trace.beginSection("Voice.setContentView");
         setContentView(R.layout.activity_voice);
-        Trace.endSection();
         
         // 3. 初始化视图（主线程，必须）
-        Trace.beginSection("Voice.initViews");
         initViews();
-        Trace.endSection();
         
-        // 4. 初始化主线程Handler
-        mainHandler = new Handler(Looper.getMainLooper());
+        // 4. 初始化主线程Handler（静态内部类 + WeakReference，防止内存泄漏）
+        mainHandler = new SafeHandler(this);
         
         // 5. 设置监听器（轻量，可立即执行）
         setupListeners();
         
         // 7. 延迟初始化音频组件（后台线程，避免阻塞UI）
-        mainHandler.postDelayed(() -> {
-            Trace.beginSection("Voice.initAudio");
-            long audioStart = System.currentTimeMillis();
-            initAudio();
-            Log.d("XiaoZhiPerf", "Voice音频初始化耗时: " + (System.currentTimeMillis() - audioStart) + "ms");
-            Trace.endSection();
-        }, 100);
+        mainHandler.sendEmptyMessageDelayed(MSG_INIT_AUDIO, 100);
         
         // 8. 延迟初始化WebSocket连接（页面完全显示后再连接）
-        mainHandler.postDelayed(() -> {
-            Trace.beginSection("Voice.initWebSocket");
-            long wsStart = System.currentTimeMillis();
-            initWebSocket();
-            Log.d("XiaoZhiPerf", "Voice WebSocket初始化耗时: " + (System.currentTimeMillis() - wsStart) + "ms");
-            Trace.endSection();
-        }, 200);
+        mainHandler.sendEmptyMessageDelayed(MSG_INIT_WEBSOCKET, 200);
         
         // 9. 延迟初始化图像识别（非关键功能，最后初始化）
-        mainHandler.postDelayed(() -> {
-            Trace.beginSection("Voice.initImageRecognition");
-            long imgStart = System.currentTimeMillis();
-            initImageRecognition();
-            Log.d("XiaoZhiPerf", "Voice图像识别初始化耗时: " + (System.currentTimeMillis() - imgStart) + "ms");
-            Trace.endSection();
-        }, 300);
+        mainHandler.sendEmptyMessageDelayed(MSG_INIT_IMAGE, 300);
         
         long duration = System.currentTimeMillis() - startTime;
         Log.d("XiaoZhiPerf", "Voice.onCreate 总耗时: " + duration + "ms");
-        Trace.endSection();
     }
 
     private void initViews() {
@@ -239,7 +217,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     //WebSocket连接的Java方法。它通常用于Android应用程序中，用于建立与服务器的WebSocket通信
     private void initWebSocket() {
         // 从MainActivity获取WebSocket配置
-//        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
         String deviceId = 	"c0:3e:ba:2e:d5:97";
         SettingsManager settingsManager = new SettingsManager(this);
         String wsUrl = settingsManager.getWsUrl();
@@ -265,7 +242,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             } catch (Exception e) {
                 Log.e("VoiceCall", "WebSocket连接失败", e);
                 updateCallStatus("连接失败: " + e.getMessage());
-                runOnUiThread(() -> Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+                Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
                 // 不关闭页面，让用户可以选择重试或返回
             }
         } else {
@@ -276,11 +253,13 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
 
     private void initAudio() {
-        executorService = Executors.newSingleThreadExecutor();
-        audioExecutor = Executors.newSingleThreadExecutor();
-        playbackExecutor = Executors.newSingleThreadExecutor();
-        cameraExecutor = Executors.newSingleThreadExecutor();
-        mainHandler = new Handler(Looper.getMainLooper());
+        //采集，发送
+        executorService = Executors.newSingleThreadExecutor();//音频采集，编码和发送   从麦克风读取 PCM 数据 → Opus 编码 → WebSocket 发送（第474行）
+        //接收，播放
+        audioExecutor = Executors.newSingleThreadExecutor();//音频解码和播放控制   WebSocket 接收 Opus 数据 → 解码为 PCM（第974行）；暂停/停止播放（第845行）
+        playbackExecutor = Executors.newSingleThreadExecutor();//音频播放
+        //摄像头分析
+        cameraExecutor = Executors.newSingleThreadExecutor();//摄像头分析
 
         // 设置音频会话模式为通信模式，有助于回声消除
         AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
@@ -293,7 +272,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         requestAudioFocus();
         
         // 初始化音频播放队列
-        audioQueue = new LinkedBlockingQueue<>();
+        audioQueue = new LinkedBlockingQueue<>();//音频播放队列，用于存储解码后的PCM数据
         startPlaybackThread();
 
         // 初始化Opus编解码器
@@ -329,7 +308,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }
     }
 
-    private void setupListeners() {
+    private void setupListeners() {//设置按钮点击事件监听器
         muteButton.setOnClickListener(v -> toggleMute());
         hangupButton.setOnClickListener(v -> endCall());
         speakerButton.setOnClickListener(v -> toggleSpeaker());
@@ -340,7 +319,8 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         rootView.setOnClickListener(v -> interruptAiResponse());
     }
 
-    private void toggleCameraPreview() {
+    private void toggleCameraPreview() {//切换开关摄像头预览
+        // 检查摄像头权限，如果没授权就申请权限并返回
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.CAMERA}, CAMERA_PERMISSION_REQUEST_CODE);
             return;
@@ -355,7 +335,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         frontCameraPreview.setVisibility(isPreviewStarted ? View.VISIBLE : View.GONE);
         previewButton.setImageResource(isPreviewStarted ? R.drawable.baseline_videocam_24 : R.drawable.baseline_videocam_24);
     }
-    //相机权限请求回调方法
+    //相机权限请求回调方法，重写父类方法
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -375,7 +355,8 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             return;
         }
 
-        // 首次获取 CameraProvider
+        // 首次获取 CameraProvider 相机核心类使用CameraX 自动绑定生命周期，极致设备兼容，API 极简易上手，自动适配预览比例
+        //listenableFuture 带监听回调的异步结果容器
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(() -> {
             try {
@@ -388,7 +369,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }, ContextCompat.getMainExecutor(this));
     }
 
-    private void bindCameraPreview() {
+    private void bindCameraPreview() {//创建绑定相机预览
         if (cameraProvider == null) return;
 
         // 取消之前绑定的所有用例
@@ -424,20 +405,8 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }
     }
 
-//    @Override
-//    protected void onPause() {
-//        super.onPause();
-//        stopCameraPreview();
-//        isPreviewStarted = false;
-//        if (frontCameraPreview != null) {
-//            frontCameraPreview.setVisibility(View.GONE);
-//        }
-//        if (previewButton != null) {
-//            previewButton.setImageResource(R.drawable.baseline_videocam_24);
-//        }
-//    }
-//===
-    private void startCall() {
+
+    private void startCall() {//发送握手请求
         if (!webSocketManager.isConnected()) {
             updateCallStatus("未连接");
             return;
@@ -465,12 +434,15 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             updateCallStatus("开始通话失败");
         }
     }
-    //不知道为什么报错
 
+
+    /*
+    * 本地录制编码发送音频
+    * */
     @SuppressLint("MissingPermission")
-    private void startRecording() {
+    private void startRecording() {//开始一直录音
         if (audioRecord == null) {
-            audioRecord = new AudioRecord(
+            audioRecord = new AudioRecord(//创建录音对象
                     MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                     SAMPLE_RATE,
                     CHANNEL_CONFIG,
@@ -480,18 +452,18 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             
             // 启用回声消除器
             if (AcousticEchoCanceler.isAvailable()) {
-                echoCanceler = AcousticEchoCanceler.create(audioRecord.getAudioSessionId());
+                echoCanceler = AcousticEchoCanceler.create(audioRecord.getAudioSessionId());//创建绑定
                 if (echoCanceler != null) {
-                    echoCanceler.setEnabled(true);
+                    echoCanceler.setEnabled(true);//启用
                     Log.d("VoiceCall", "AcousticEchoCanceler enabled");
                 }
             }
 
             // 启用噪声抑制器
             if (NoiseSuppressor.isAvailable()) {
-                noiseSuppressor = NoiseSuppressor.create(audioRecord.getAudioSessionId());
+                noiseSuppressor = NoiseSuppressor.create(audioRecord.getAudioSessionId());//创建绑定
                 if (noiseSuppressor != null) {
-                    noiseSuppressor.setEnabled(true);
+                    noiseSuppressor.setEnabled(true);//启用
                     Log.d("VoiceCall", "NoiseSuppressor enabled");
                 }
             }
@@ -503,11 +475,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             return;
         }
 
-        executorService.execute(() -> {
+        executorService.execute(() -> {//告诉线程池：帮我跑一下后面这段代码。
             try {
                 audioRecord.startRecording();
                 byte[] buffer = new byte[BUFFER_SIZE];
-
+                // 独占单线程池，循环这个任务，直到isRecording为false
                 while (isRecording) {
                     int read = audioRecord.read(buffer, 0, BUFFER_SIZE);
                     if (read > 0 && !isMuted) {
@@ -523,7 +495,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         });
     }
     //发音频
-    private void sendAudioData(byte[] data, int size) {
+    private void sendAudioData(byte[] data, int size) {//编码发送
         // 安全检查：确保opus已初始化
         if (opusUtils == null || encoderHandle == 0) {
             Log.w("VoiceCall", "Opus编码器未初始化，跳过发送音频");
@@ -535,15 +507,16 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 // 记录音频上传开始时间
                 long uploadStartTime = System.currentTimeMillis();
                 
-                // 将byte[]转换为short[]
+                // 将byte[]转换为short[] Opus 需要 short[]
                 short[] samples = new short[size / 2];
                 for (int i = 0; i < samples.length; i++) {
                     samples[i] = (short) ((data[i * 2] & 0xFF) | (data[i * 2 + 1] << 8));
                 }
 
-                // 编码音频数据
+                // 编码音频数据 Opus 编码：压缩音频数据
                 byte[] encodedData = new byte[size];
                 int encodedSize = opusUtils.encode(encoderHandle, samples, 0, encodedData);
+                //如果编码成功，才发送音频数据
                 if (encodedSize > 0) {
                     // 直接发送编码后的音频数据
                     byte[] encodedBytes = new byte[encodedSize];
@@ -563,6 +536,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         }
     }
+
+
+
+
     //静音
     private void toggleMute() {
         isMuted = !isMuted;
@@ -570,21 +547,14 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         updateCallStatus(isMuted ? "已静音" : "正在通话中...");
     }
     //有无声音
-    private void toggleSpeaker() {
+    private void toggleSpeaker() {//扬声器/听筒切换 方法
         isSpeakerOn = !isSpeakerOn;
         speakerButton.setImageResource(isSpeakerOn ? R.drawable.ic_volume_up : R.drawable.ic_volume_off);
 
         AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         audioManager.setSpeakerphoneOn(isSpeakerOn);
-        
-        // 根据扬声器状态调整音频模式以优化回声抑制
-        if (isSpeakerOn) {
-            // 扬声器模式，使用通信模式并启用回声抑制
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        } else {
-            // 听筒模式，使用通信模式
-            audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
-        }
+        // 音频模式，使用通信模式并启用回声抑制
+        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
     }
     private void stopRecording() {
         isRecording = false;
@@ -615,7 +585,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
 
     //挂断
-    private void endCall() {
+    private void endCall() {//关闭各种资源
         try {
             // 停止录音
             isRecording = false;
@@ -715,7 +685,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             finish();
         }
     }
-    //打断===
+    //打断AI回答 方法
     private void interruptAiResponse() {
         if (webSocketManager != null && webSocketManager.isConnected()) {
             try {
@@ -730,7 +700,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     //更新通话状态的显示
     public void updateCallStatus(String status) {
-        runOnUiThread(() -> {
+        mainHandler.post(() -> {
             if (callStatusText != null) {
                 callStatusText.setText(status);
             }
@@ -738,7 +708,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     //更新文字
     public void updateAiMessage(String message) {
-        runOnUiThread(() -> {
+        mainHandler.post(() -> {
             if (aiMessageText != null) {
                 aiMessageText.setText(message);
             }
@@ -746,7 +716,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     //更新人文字
     public void updateRecognizedText(String text) {
-        runOnUiThread(() -> {
+        mainHandler.post(() -> {
             // 过滤掉图像识别信息，只显示用户真正说的话
             if (text != null && text.contains("[视觉]:")) {
                 // 这是图像识别信息，不显示给用户
@@ -764,9 +734,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 if (imageRecognitionManager == null) {
                     // 未配置讯飞API，显示提示信息
                     Toast.makeText(Voice.this, "未配置讯飞API，无法使用图像识别功能，请在设置中配置", Toast.LENGTH_SHORT).show();
-                    // 可以选择跳转到设置页面
-                    // Intent intent = new Intent(Voice.this, SettingsActivity.class);
-                    // startActivity(intent);
                 } else {
                     captureFrame();
                 }
@@ -792,12 +759,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 waveformBuffer[i] = sample / 32768f;
             }
         }
-        runOnUiThread(() -> userWaveformView.setAmplitudes(waveformBuffer));
+        mainHandler.post(() -> userWaveformView.setAmplitudes(waveformBuffer));
     }
 
     //更新AI声音波形
     public void updateAiWaveform(float[] amplitudes) {
-        runOnUiThread(() -> {
+        mainHandler.post(() -> {
             if (aiWaveformView != null) {
                 aiWaveformView.setAmplitudes(amplitudes);
             }
@@ -834,7 +801,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         Log.d("VoiceCall-Message", "收到文本消息: " + message + ", 时间戳: " + messageReceiveTime);
         
         try {
-            JSONObject jsonMessage = new JSONObject(message);
+            JSONObject jsonMessage = new JSONObject(message);//解析JSON字符串
             String type = jsonMessage.getString("type");
 
             switch (type) {
@@ -859,7 +826,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 case "tts":
                     long ttsProcessTime = System.currentTimeMillis() - messageReceiveTime;
                     Log.d("VoiceCall-TTS", "收到TTS消息, 处理耗时: " + ttsProcessTime + "ms");
-                    handleTTSMessage(jsonMessage);
+                    handleTTSMessage(jsonMessage);//安全更新UI
                     break;
             }
         } catch (Exception e) {
@@ -867,7 +834,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }
     }
 
-    private void stopCurrentAudio() {
+    private void stopCurrentAudio() {//打断当前音频播放，当ai说话或者用户说话时调用
         // 检查线程池状态
         if (audioExecutor == null || audioExecutor.isShutdown() || audioExecutor.isTerminated()) {
             Log.w("VoiceCall", "AudioExecutor已关闭，无法停止音频");
@@ -889,12 +856,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         });
     }
 
-    private void handleTTSMessage(JSONObject message) {
+    private void handleTTSMessage(JSONObject message) {//安全更新UI，处理json消息
         try {
             String state = message.getString("state");
             long ttsProcessStart = System.currentTimeMillis();
             
-            switch (state) {
+            switch (state) {//state json的键，根据不同的状态进行处理
                 case "start":
                     Log.d("VoiceCall-TTS", "TTS开始, 时间戳: " + ttsProcessStart);
                     stopCurrentAudio();
@@ -946,7 +913,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }
     }
 
-    private String[] extractEmojiAndText(String text) {
+    private String[] extractEmojiAndText(String text) {//从文本中提取emoji和普通文本
         StringBuilder emoji = new StringBuilder();
         StringBuilder cleanText = new StringBuilder();
 
@@ -971,7 +938,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
 
     private void showEmoji(String emoji) {
-        runOnUiThread(() -> {
+        mainHandler.post(() -> {
             if (emojiText != null) {
                 emojiText.setText(emoji);
                 emojiText.setVisibility(View.VISIBLE);
@@ -980,7 +947,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
 
     private void hideEmoji() {
-        runOnUiThread(() -> {
+        mainHandler.post(() -> {
             if (emojiText != null) {
                 emojiText.setVisibility(View.GONE);
             }
@@ -994,10 +961,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             return;
         }
 
-        // 记录音频接收开始时间
-        long receiveStartTime = System.currentTimeMillis();
-
-        // 检查线程池状态，避免在已关闭的线程池中执行任务
         if (audioExecutor == null || audioExecutor.isShutdown() || audioExecutor.isTerminated()) {
             Log.w("VoiceCall", "AudioExecutor已关闭，忽略音频数据");
             return;
@@ -1005,42 +968,26 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
         audioExecutor.execute(() -> {
             try {
-                // 安全检查：确保opus已初始化
                 if (opusUtils == null || decoderHandle == 0) {
                     Log.w("VoiceCall", "Opus解码器未初始化，忽略音频数据");
                     return;
                 }
-                
-                Log.d("AudioDebug", "收到音频数据长度: " + data.length + " bytes");
-                
-                // 记录解码开始时间
-                long decodeStartTime = System.currentTimeMillis();
-                int decodedSamples = opusUtils.decode(decoderHandle, data, decodedBuffer);
-                long decodeEndTime = System.currentTimeMillis();
-
+                //decodedBuffer (short[])  ← 在这里！Opus 解码后的原始 PCM 采样点
+                //decodedSamples (int)  ←decodedSamples 是"音频数据的颗粒数"，乘以 2 才是实际占用的字节大小。
+                //这是因为代码中使用的是 16 位 PCM 音频格式 ：每个样本占用 2 个字节
+                int decodedSamples = opusUtils.decode(decoderHandle, data, decodedBuffer);//解码音频数据，返回解码后的样本数
+                //如果有数据
                 if (decodedSamples > 0) {
-                    // ⚠️ 音频数据必须创建新数组，因为会被放入队列异步播放
-                    // 复用缓冲区会导致数据被覆盖，播放异常
-                    byte[] pcmData = new byte[decodedSamples * 2];
-                    
-                    // 使用 ByteBuffer 批量转换，比循环快很多，降低延迟
+                    byte[] pcmData = new byte[decodedSamples * 2];//创建一个字节数组，大小刚好用于存储解码后的PCM数据
                     java.nio.ByteBuffer.wrap(pcmData).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(decodedBuffer, 0, decodedSamples);
-                    
-                    Log.d("AudioDebug", "PCM数据长度: " + pcmData.length + " bytes");
-                    
-                    // 记录PCM数据准备完成时间
-                    long pcmReadyTime = System.currentTimeMillis();
-                    
-                    // 将音频数据放入队列，由专门的播放线程处理
+                    //将解码后的PCM数据放入阻塞队列
                     if (audioQueue != null) {
-                        boolean offered = audioQueue.offer(pcmData);
-                        Log.d("AudioDebug", "音频数据入队: " + offered + ", 队列大小: " + audioQueue.size());
+                        boolean offered = audioQueue.offer(pcmData);//尝试将PCM数据放入队列，返回是否成功放入
                         if (!offered) {
                             Log.w("AudioDebug", "音频队列已满，丢弃数据");
                         }
                     }
-
-                    // 波形显示数据可以复用缓冲区（立即使用，不入队列）
+                    //更新AI波形图
                     float[] amplitudes = amplitudeBuffer.length >= decodedSamples 
                         ? amplitudeBuffer 
                         : new float[decodedSamples];
@@ -1177,13 +1124,15 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     
     /**
-     * 安全关闭线程池
+     * 安全关闭线程池这是一个 线程池优雅关闭 的工具方法
+     * 播放完当前数据，又能及时释放资源，不会产生突兀的中断效果
      */
     private void shutdownExecutor(ExecutorService executor) {
-        if (executor == null || executor.isShutdown()) return;
-        
+        if (executor == null || executor.isShutdown()) return;//如果线程池为空或已关闭，直接返回
+        //发起温和关闭：不再接受新任务，但会等待已提交的任务完成
         executor.shutdown();
-        try {
+        try {//等待已提交的任务完成
+        //如果等待超过1秒，强制关闭线程池
             if (!executor.awaitTermination(1, java.util.concurrent.TimeUnit.SECONDS)) {
                 executor.shutdownNow();
             }
@@ -1192,7 +1141,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }
     }
      
-     private void startPlaybackThread() {
+
+    /*
+    * 启动播放线程
+    * */
+    private void startPlaybackThread() {//启动播放线程
          // 检查线程池状态
          if (playbackExecutor == null || playbackExecutor.isShutdown() || playbackExecutor.isTerminated()) {
              Log.w("VoiceCall", "PlaybackExecutor已关闭，无法启动播放线程");
@@ -1200,11 +1153,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
          }
          
          isPlaybackThreadRunning = true;
-         playbackExecutor.execute(() -> {
+         playbackExecutor.execute(() -> {//提交播放任务
              Log.d("AudioPlayback", "播放线程启动");
              while (isPlaybackThreadRunning) {
                  try {
-                     // 从队列中取出音频数据，降低轮询超时以减少延迟
+                     // 从队列中取出音频数据，降低轮询超时以减少延迟  从队列取数据，10ms超时（非阻塞轮询）
+                     //音频不能等
                     byte[] pcmData = audioQueue.poll(10, java.util.concurrent.TimeUnit.MILLISECONDS);
                      if (pcmData == null) {
                          continue; // 超时，继续循环检查
@@ -1222,7 +1176,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                      
                      // 开始播放
                      if (!isPlaying && audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
-                         audioTrack.play();
+                         audioTrack.play();//启动音频流播放，让 AudioTrack 进入可出声状态
                          isPlaying = true;
                          Log.d("AudioTrack", "Playback started");
                      }
@@ -1231,7 +1185,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                      if (isPlaying && audioTrack != null) {
                          int bytesWritten = audioTrack.write(pcmData, 0, pcmData.length, AudioTrack.WRITE_BLOCKING);
                          Log.d("AudioDebug", "写入AudioTrack字节数: " + bytesWritten);
-                         
                          // 记录音频写入完成时间
                          long writeCompleteTime = System.currentTimeMillis();
                      }
@@ -1260,7 +1213,8 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     
     /**
-     * 静态内部类，避免隐式持有外部 Activity 引用
+     * 音频焦点管理
+     * 自定义音频焦点监听器
      */
     private static class AudioFocusChangeListener implements AudioManager.OnAudioFocusChangeListener {
         private final WeakReference<Voice> activityRef;
@@ -1300,14 +1254,14 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }
     }
     
-    private void requestAudioFocus() {
+    private void requestAudioFocus() {//请求音频焦点
         AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         audioManager.requestAudioFocus(audioFocusChangeListener,
                 AudioManager.STREAM_VOICE_CALL,
                 AudioManager.AUDIOFOCUS_GAIN);
     }
     
-    private void abandonAudioFocus() {
+    private void abandonAudioFocus() {//放弃音频焦点
         AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
         if (audioFocusChangeListener != null) {
             audioManager.abandonAudioFocus(audioFocusChangeListener);
@@ -1332,7 +1286,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         // }
     }
 
-    private void initSDK() {
+    private void initSDK() {//初始化讯飞SDK
         Log.d("SDK", "正在初始化SDK...");
         // 初始化SDK，使用链式调用简化代码
         SparkChainConfig sparkChainConfig = SparkChainConfig.builder()
@@ -1348,7 +1302,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show();
         }
     }
-    //相机数据返回后端服务器
+    // 初始化图像识别管理器，用于处理相机数据的图像识别
     private void initImageRecognition() {
         // 获取讯飞API配置
         SettingsManager settingsManager = new SettingsManager(this);
@@ -1372,9 +1326,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
                 @Override
                 public void onRecognitionResult(String content) {
-                    runOnUiThread(() -> {
-                        // 直接发送文本消息
-                        if (webSocketManager != null && webSocketManager.isConnected()) {
+                    mainHandler.post(() -> {
+                            // 直接发送文本消息
+                            if (webSocketManager != null && webSocketManager.isConnected()) {
                             try {
                                 JSONObject jsonMessage = new JSONObject();
                                 jsonMessage.put("type", "listen");
@@ -1406,15 +1360,15 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
                 @Override
                 public void onRecognitionError(String errorMessage) {
-                    runOnUiThread(() -> {
-                        Toast.makeText(Voice.this, "识别失败: " + errorMessage, Toast.LENGTH_SHORT).show();
-                        Log.e("ImageRecognition", "识别失败: " + errorMessage);
-                    });
+                    mainHandler.post(() -> {
+                            Toast.makeText(Voice.this, "识别失败: " + errorMessage, Toast.LENGTH_SHORT).show();
+                            Log.e("ImageRecognition", "识别失败: " + errorMessage);
+                        });
                 }
             });
         } catch (Exception e) {
             Log.e("VoiceCall", "初始化图像识别管理器失败", e);
-            runOnUiThread(() -> Toast.makeText(this, "初始化图像识别失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
+            mainHandler.post(() -> Toast.makeText(this, "初始化图像识别失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
             imageRecognitionManager = null;
         }
     }
@@ -1451,7 +1405,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 final int height = imageProxy.getHeight();
 
                 // 在主线程调用图像识别
-                runOnUiThread(() -> {
+                mainHandler.post(() -> {
                     // 使用反射或直接创建一个虚拟 Camera 对象来获取尺寸
                     // 这里我们直接处理
                     try {
@@ -1507,5 +1461,39 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         uBuffer.get(yuv, ySize + vSize, uSize);
 
         return yuv;
+    }
+
+    private static class SafeHandler extends Handler {
+        private final WeakReference<Voice> activityRef;
+
+        SafeHandler(Voice activity) {
+            super(Looper.getMainLooper());
+            activityRef = new WeakReference<>(activity);
+        }
+
+        @Override
+        public void handleMessage(@NonNull Message msg) {
+            Voice voice = activityRef.get();
+            if (voice == null) return;
+
+            long startTime;
+            switch (msg.what) {
+                case MSG_INIT_AUDIO:
+                    startTime = System.currentTimeMillis();
+                    voice.initAudio();
+                    Log.d("XiaoZhiPerf", "Voice音频初始化耗时: " + (System.currentTimeMillis() - startTime) + "ms");
+                    break;
+                case MSG_INIT_WEBSOCKET:
+                    startTime = System.currentTimeMillis();
+                    voice.initWebSocket();
+                    Log.d("XiaoZhiPerf", "Voice WebSocket初始化耗时: " + (System.currentTimeMillis() - startTime) + "ms");
+                    break;
+                case MSG_INIT_IMAGE:
+                    startTime = System.currentTimeMillis();
+                    voice.initImageRecognition();
+                    Log.d("XiaoZhiPerf", "Voice图像识别初始化耗时: " + (System.currentTimeMillis() - startTime) + "ms");
+                    break;
+            }
+        }
     }
 }
