@@ -160,6 +160,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     // 回声消除和噪声抑制硬件AEC
     private AcousticEchoCanceler echoCanceler;
     private NoiseSuppressor noiseSuppressor;
+    
+    // 视频帧缓存
+    private FrameCache frameCache;//环形数组实现的帧缓存对象，固定容量 5 帧。它持续接收摄像头预览帧，自动覆盖最旧数据。
+    private long lastFrameCaptureTime = 0;//上一帧捕获时间戳
+    private static final int FRAME_CAPTURE_INTERVAL_MS = 1000; // 帧间隔每秒捕获一帧
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -350,17 +355,17 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     //相机启动摄像头预览
     private void startCameraPreview() {
         if (cameraProvider != null) {
-            // 已经初始化过相机，直接绑定并启动
             bindCameraPreview();
             return;
         }
 
-        // 首次获取 CameraProvider 相机核心类使用CameraX 自动绑定生命周期，极致设备兼容，API 极简易上手，自动适配预览比例
-        //listenableFuture 带监听回调的异步结果容器
         ListenableFuture<ProcessCameraProvider> cameraProviderFuture = ProcessCameraProvider.getInstance(this);
         cameraProviderFuture.addListener(() -> {
             try {
                 cameraProvider = cameraProviderFuture.get();
+                if (frameCache == null) {
+                    frameCache = new FrameCache();//创建帧缓存对象
+                }
                 bindCameraPreview();
             } catch (ExecutionException | InterruptedException e) {
                 Log.e("CameraPreview", "Error getting camera provider: " + e.getMessage());
@@ -369,28 +374,27 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         }, ContextCompat.getMainExecutor(this));
     }
 
-    private void bindCameraPreview() {//创建绑定相机预览
+    private void bindCameraPreview() {
         if (cameraProvider == null) return;
 
-        // 取消之前绑定的所有用例
         cameraProvider.unbindAll();
 
-        // 设置前置摄像头
         CameraSelector cameraSelector = new CameraSelector.Builder()
                 .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
                 .build();
 
-        // 创建预览用例
         Preview preview = new Preview.Builder()
                 .build();
 
-        // 将预览画面连接到 PreviewView
         preview.setSurfaceProvider(frontCameraPreview.getSurfaceProvider());
 
         try {
-            // 绑定用例到生命周期
             cameraProvider.bindToLifecycle(this, cameraSelector, preview);
             isPreviewStarted = true;
+            
+            if (frameCache != null) {
+                startContinuousFrameCapture();//开始连续捕获视频帧
+            }
         } catch (Exception e) {
             Log.e("CameraPreview", "Error binding camera preview: " + e.getMessage());
             Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
@@ -1374,59 +1378,70 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     //相机识别
     private void captureFrame() {
-        if (cameraProvider == null) {
+        if (cameraProvider == null || frameCache == null) {
             Toast.makeText(this, "相机未启动", Toast.LENGTH_SHORT).show();
             return;
         }
 
-        // 检查图像识别管理器是否已初始化
         if (imageRecognitionManager == null) {
-            // 未配置讯飞API，显示提示信息
             Toast.makeText(Voice.this, "未配置讯飞API，无法使用图像识别功能", Toast.LENGTH_SHORT).show();
             return;
         }
+        // 从缓存中获取最新的一帧
+        FrameCache.FrameData latestFrame = frameCache.getLatestFrame();
+        if (latestFrame == null) {
+            Toast.makeText(this, "暂无可用帧", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        // 检查帧是否过期
+        long frameAge = System.currentTimeMillis() - latestFrame.timestamp;
+        if (frameAge > 3000) {
+            Toast.makeText(this, "帧数据已过期", Toast.LENGTH_SHORT).show();
+            return;
+        }
 
-        // 设置视频理解状态为true，表示这是主动的视频理解请求
         isVideoUnderstanding = true;
+        // 处理图像帧
+        try {
+            imageRecognitionManager.processPreviewFrameFromCameraX(
+                latestFrame.yuvData, 
+                latestFrame.width, 
+                latestFrame.height
+            );
+            Toast.makeText(Voice.this, "正在识别图像...", Toast.LENGTH_SHORT).show();
+        } catch (Exception e) {
+            Log.e("CameraPreview", "图像处理失败: " + e.getMessage());
+            isVideoUnderstanding = false;
+        }
+    }
 
-        // 使用 ImageAnalysis 获取预览帧
-        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
+    private void startContinuousFrameCapture() {//开始连续捕获视频帧
+        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()//创建图像分析器
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .build();
 
-        imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {
-            // 转换为 YUV 格式
-            byte[] yuvData = imageProxyToYuv420(imageProxy);
-
-            if (yuvData != null) {
-                // 调用处理方法（需要 Camera 参数来获取尺寸）
-                // 由于 CameraX 不再使用 Camera 对象，我们创建一个简单的包装
-                final int width = imageProxy.getWidth();
-                final int height = imageProxy.getHeight();
-
-                // 在主线程调用图像识别
-                mainHandler.post(() -> {
-                    // 使用反射或直接创建一个虚拟 Camera 对象来获取尺寸
-                    // 这里我们直接处理
-                    try {
-                        // 将 ImageProxy 转换为兼容格式
-                        imageRecognitionManager.processPreviewFrameFromCameraX(yuvData, width, height);
-                        Toast.makeText(Voice.this, "正在识别图像...", Toast.LENGTH_SHORT).show();
-                    } catch (Exception e) {
-                        Log.e("CameraPreview", "图像处理失败: " + e.getMessage());
-                    }
-                });
+        imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {//设置图像分析器的分析器
+            // 检查是否需要捕获新帧
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastFrameCaptureTime < FRAME_CAPTURE_INTERVAL_MS) {//如果距离上一次捕获时间不足100ms，直接返回
+                imageProxy.close();
+                return;
             }
-
-            // 关闭 ImageProxy 以释放资源
+            
+            lastFrameCaptureTime = currentTime;
+            //捕捉
+            byte[] yuvData = imageProxyToYuv420(imageProxy);
+            if (yuvData != null) {
+                int width = imageProxy.getWidth();
+                int height = imageProxy.getHeight();
+                
+                frameCache.addFrame(yuvData, width, height);
+            }
+            
             imageProxy.close();
-
-            // 取消分析，只处理一帧
-            imageAnalysis.clearAnalyzer();
         });
 
-        // 重新绑定用例，添加 ImageAnalysis
-        CameraSelector cameraSelector = new CameraSelector.Builder()
+        CameraSelector cameraSelector = new CameraSelector.Builder()//创建相机选择器
                 .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
                 .build();
 
@@ -1461,6 +1476,86 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         uBuffer.get(yuv, ySize + vSize, uSize);
 
         return yuv;
+    }
+
+    private static class FrameCache {//底层字节数组
+        private static final int CACHE_SIZE = 5; // 缓存5帧（约3-5秒）
+        private final FrameData[] frames;
+        private int writeIndex = 0;//写入索引，指向下一个要写入的帧位置
+        private int count = 0;//当前缓存中的帧数量
+        
+        private static class FrameData {
+            byte[] yuvData;//YUV420格式的视频数据数组
+            int width;//视频宽度
+            int height;//视频高度
+            long timestamp;//视频时间戳
+            
+            FrameData(byte[] yuvData, int width, int height, long timestamp) {
+                this.yuvData = yuvData;
+                this.width = width;
+                this.height = height;
+                this.timestamp = timestamp;
+            }
+        }
+        
+        FrameCache() {
+            frames = new FrameData[CACHE_SIZE];
+        }
+        
+        synchronized void addFrame(byte[] yuvData, int width, int height) {
+            long timestamp = System.currentTimeMillis();
+            
+            if (frames[writeIndex] == null) {
+                frames[writeIndex] = new FrameData(yuvData, width, height, timestamp);
+            } else {
+                frames[writeIndex].yuvData = yuvData;
+                frames[writeIndex].width = width;
+                frames[writeIndex].height = height;
+                frames[writeIndex].timestamp = timestamp;
+            }
+            
+            writeIndex = (writeIndex + 1) % CACHE_SIZE;//更新写入索引，指向下一个要写入的帧位置，取余覆盖旧帧
+            count = Math.min(count + 1, CACHE_SIZE);
+        }
+        //获取最新的一帧
+        synchronized FrameData getLatestFrame() {
+            if (count == 0) return null;
+            int latestIndex = (writeIndex - 1 + CACHE_SIZE) % CACHE_SIZE;
+            return frames[latestIndex];
+        }
+        //根据时间戳获取最近的一帧
+        synchronized FrameData getFrameNearTimestamp(long targetTimestamp) {
+            if (count == 0) return null;
+            
+            FrameData closest = null;
+            long minDiff = Long.MAX_VALUE;
+            
+            for (int i = 0; i < count; i++) {
+                int idx = (writeIndex - 1 - i + CACHE_SIZE) % CACHE_SIZE;
+                FrameData frame = frames[idx];
+                if (frame != null) {
+                    long diff = Math.abs(frame.timestamp - targetTimestamp);
+                    if (diff < minDiff) {
+                        minDiff = diff;
+                        closest = frame;
+                    }
+                }
+            }
+            
+            if (minDiff > 2000) {
+                return null;
+            }
+            
+            return closest;
+        }
+        
+        synchronized void clear() {
+            for (int i = 0; i < CACHE_SIZE; i++) {
+                frames[i] = null;
+            }
+            writeIndex = 0;
+            count = 0;
+        }
     }
 
     private static class SafeHandler extends Handler {
