@@ -14,6 +14,7 @@ import android.media.audiofx.NoiseSuppressor;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.Log;
@@ -32,6 +33,7 @@ import com.iflytek.sparkchain.core.SparkChainConfig;
 import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.activities.BtThread.ConnectedThread;
 import com.lhht.xiaozhi.api.ImageRecognitionManager;
+import com.lhht.xiaozhi.services.BluetoothService;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
 import com.lhht.xiaozhi.websocket.WebSocketManager;
@@ -47,6 +49,9 @@ import java.util.concurrent.ExecutionException;
 import com.google.common.util.concurrent.ListenableFuture;
 
 import android.Manifest;
+import android.content.ComponentName;
+import android.content.Context;
+import android.content.ServiceConnection;
 import android.content.pm.PackageManager;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
@@ -105,6 +110,8 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private boolean isAuth = false;
     private ImageRecognitionManager imageRecognitionManager;
     private ConnectedThread connectedThread;
+    private BluetoothService btService;
+    private boolean btServiceBound = false;
     public static char order='x';
     public static double roadDistance = 0.0; // 距离右侧车道线距离，用于蓝牙发送
     private boolean isVideoUnderstanding = false; // 标识是否正在进行视频理解
@@ -120,6 +127,22 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     
     // 音频焦点管理
     private AudioManager.OnAudioFocusChangeListener audioFocusChangeListener;
+
+    private final ServiceConnection btConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            BluetoothService.LocalBinder binder = (BluetoothService.LocalBinder) service;
+            btService = binder.getService();
+            btServiceBound = true;
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            btServiceBound = false;
+            btService = null;
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -143,6 +166,8 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         initAudio();
         setupListeners();
         initImageRecognition();
+
+        bindService(new Intent(this, BluetoothService.class), btConnection, Context.BIND_AUTO_CREATE);
 
         // 初始化视频播放
         Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.new_action);
@@ -765,6 +790,10 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 case "tts":
                     handleTTSMessage(jsonMessage);
                     break;
+
+                case "action":
+                    handleActionMessage(jsonMessage);
+                    break;
             }
         } catch (Exception e) {
             Log.e("VoiceCall", "处理消息失败", e);
@@ -852,6 +881,28 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
         } catch (Exception e) {
             Log.e("VoiceCall", "处理TTS消息失败", e);
+        }
+    }
+
+    private void handleActionMessage(JSONObject message) {
+        try {
+            String action = message.getString("action");
+            Log.d("VoiceCall-Action", "收到动作指令: " + action);
+
+            if (btServiceBound && btService != null) {
+                switch (action) {
+                    case "NOACTION":
+                        btService.sendChar('n');
+                        break;
+                    case "WAVE":
+                        btService.sendChar('f');
+                        break;
+                }
+            } else {
+                Log.w("VoiceCall-Action", "蓝牙服务未绑定，无法发送动作指令");
+            }
+        } catch (Exception e) {
+            Log.e("VoiceCall-Action", "处理动作消息失败", e);
         }
     }
 
@@ -1062,6 +1113,10 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        if (btServiceBound) {
+            unbindService(btConnection);
+            btServiceBound = false;
+        }
         if (webSocketManager != null) {
             try {
                 JSONObject endMessage = new JSONObject();
