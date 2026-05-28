@@ -211,7 +211,7 @@ public class WebSocketManager {
                         if (listener != null) {
                             listener.onConnected();
                         }
-                        sendHelloMessage();
+                        // sendHelloMessage 由各 Activity 的 startCall() 统一发送，避免重复
                     });
                 }
                 //重新定义onMessage方法，获取二进制消息
