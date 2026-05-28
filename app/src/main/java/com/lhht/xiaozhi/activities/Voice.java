@@ -46,10 +46,7 @@ import android.widget.VideoView;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
-//import com.iflytek.sparkchain.core.SparkChain;
-//import com.iflytek.sparkchain.core.SparkChainConfig;
 import com.lhht.xiaozhi.R;
-//import com.lhht.xiaozhi.api.ImageRecognitionManager;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
 import com.lhht.xiaozhi.websocket.WebSocketManager;
@@ -107,7 +104,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
     private static final int MSG_INIT_AUDIO = 1;
     private static final int MSG_INIT_WEBSOCKET = 2;
-    //private static final int MSG_INIT_IMAGE = 3;
 
     private TextView aiMessageText;
     private TextView recognizedText;
@@ -157,9 +153,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private long decoderHandle;
     private short[] decodedBuffer;// 用来存放解码后的 PCM 音频数据，供 AudioTrack 播放。
     private short[] recordBuffer;//用来存放麦克风采集到的原始音频数据，供编码器使用。
-    //private boolean isAuth = false;//一个布尔标记，用来标识用户是否已经完成了身份验证。
-    //private ImageRecognitionManager imageRecognitionManager;
-    //private boolean isVideoUnderstanding = false; // 标识是否正在进行视频理解
     
     private long speechStartTime = 0; // 记录用户开始说话的时间
     
@@ -181,7 +174,23 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     // MCP 视觉识别
     private String visionUrl = null;
     private String visionToken = null;
-    private final OkHttpClient httpClient = new OkHttpClient();
+    private volatile boolean isMcpInProgress = false;
+    private static final long PING_INTERVAL_MS = 5000;
+    private final Runnable pingRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!isMcpInProgress) return;
+            if (webSocketManager != null && webSocketManager.isConnected()) {
+                webSocketManager.sendMessage("{\"type\":\"ping\"}");
+            }
+            mainHandler.postDelayed(this, PING_INTERVAL_MS);
+        }
+    };
+    private final OkHttpClient httpClient = new OkHttpClient.Builder()
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .build();
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -213,9 +222,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         
         // 8. 延迟初始化WebSocket连接（页面完全显示后再连接）
         mainHandler.sendEmptyMessageDelayed(MSG_INIT_WEBSOCKET, 200);
-        
-        // 9. 延迟初始化图像识别（非关键功能，最后初始化）
-        //mainHandler.sendEmptyMessageDelayed(MSG_INIT_IMAGE, 300);
         
         long duration = System.currentTimeMillis() - startTime;
         Log.d("XiaoZhiPerf", "Voice.onCreate 总耗时: " + duration + "ms");
@@ -683,17 +689,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 }
             }
             
-            // 释放图像识别管理器
-            //if (imageRecognitionManager != null) {
-            //    try {
-            //        imageRecognitionManager.release();
-            //    } catch (Exception e) {
-            //        Log.e("VoiceCall", "释放图像识别管理器失败", e);
-            //    } finally {
-            //        imageRecognitionManager = null;
-            //    }
-            //}
-            
         } catch (Exception e) {
             Log.e("VoiceCall", "endCall执行失败", e);
         } finally {
@@ -743,17 +738,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             if (recognizedText != null) {
                 recognizedText.setText(text);
             }
-            
-            // 检测语音指令并处理图像识别
-            //if (text != null && text.contains("看到了什么") && cameraProvider != null && isPreviewStarted) {
-            //    // 检查图像识别管理器是否已初始化
-            //    if (imageRecognitionManager == null) {
-            //        // 未配置讯飞API，显示提示信息
-            //        Toast.makeText(Voice.this, "未配置讯飞API，无法使用图像识别功能，请在设置中配置", Toast.LENGTH_SHORT).show();
-            //    } else {
-            //        captureFrame();
-            //    }
-            //}
         });
     }
 
@@ -798,7 +782,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     @Override
     public void onDisconnected() {
         long disconnectTime = System.currentTimeMillis();
-        Log.d("VoiceCall-Connection", "WebSocket连接断开, 时间戳: " + disconnectTime);
+        Log.e("VoiceCall-Connection", "WebSocket连接断开, 时间戳: " + disconnectTime + ", isMcpInProgress=" + isMcpInProgress);
+        if (isMcpInProgress) {
+            Log.w("VoiceCall-Connection", "MCP正在进行中, 不关闭Activity, 等待重连...");
+            updateCallStatus("连接断开(等待恢复)...");
+            return;
+        }
         updateCallStatus("连接已断开");
         endCall();
     }
@@ -806,7 +795,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     @Override
     public void onError(String error) {
         long errorTime = System.currentTimeMillis();
-        Log.e("VoiceCall-Connection", "WebSocket错误: " + error + ", 时间戳: " + errorTime);
+        Log.e("VoiceCall-Connection", "WebSocket错误: " + error + ", 时间戳: " + errorTime + ", isMcpInProgress=" + isMcpInProgress);
+        if (isMcpInProgress) {
+            Log.w("VoiceCall-Connection", "MCP进行中, 忽略WebSocket错误, 等待重连...");
+            return;
+        }
         updateCallStatus("错误: " + error);
     }
 
@@ -1169,17 +1162,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             }
         }
         
-        // 10. 释放图像识别管理器
-        //if (imageRecognitionManager != null) {
-        //    try {
-        //        imageRecognitionManager.release();
-        //    } catch (Exception e) {
-        //        Log.e("Voice", "释放图像识别管理器失败", e);
-        //    }
-        //    imageRecognitionManager = null;
-        //}
-        
-        // 11. 释放音频焦点 - 关键：防止内存泄漏
+        // 10. 释放音频焦点 - 关键：防止内存泄漏
         abandonAudioFocus();
         audioFocusChangeListener = null;
         
@@ -1358,131 +1341,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         // }
     }
 
-    //private void initSDK() {//初始化讯飞SDK
-    //    Log.d("SDK", "正在初始化SDK...");
-    //    // 初始化SDK，使用链式调用简化代码
-    //    SparkChainConfig sparkChainConfig = SparkChainConfig.builder()
-    //            .appID(getResources().getString(R.string.appid))
-    //            .apiKey(getResources().getString(R.string.apikey))
-    //            .apiSecret(getResources().getString(R.string.apiSecret))
-    //            .logLevel(666);
-    //
-    //    int ret = SparkChain.getInst().init(getApplicationContext(), sparkChainConfig);
-    //    isAuth = (ret == 0);
-    //    Log.d("SDK", isAuth ? "SDK初始化成功" : "SDK初始化失败,错误码: " + ret);
-    //    if (isAuth) {
-    //        Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show();
-    //    }
-    //}
-    //// 初始化图像识别管理器，用于处理相机数据的图像识别
-    //private void initImageRecognition() {
-    //    // 获取讯飞API配置
-    //    SettingsManager settingsManager = new SettingsManager(this);
-    //    String appId = settingsManager.getAppId();
-    //    String apiKey = settingsManager.getApiKey();
-    //    String apiSecret = settingsManager.getApiSecret();
-    //    
-    //    // 检查API配置是否为空
-    //    if (appId.isEmpty() || apiKey.isEmpty() || apiSecret.isEmpty()) {
-    //        // API未配置，不初始化图像识别管理器
-    //        imageRecognitionManager = null;
-    //        Log.w("VoiceCall", "讯飞API未配置，图像识别功能不可用");
-    //        return;
-    //    }
-    //    
-    //    
-    //
-    //    
-    //    // API已配置，初始化图像识别管理器===
-    //    try {
-    //        imageRecognitionManager = new ImageRecognitionManager(this, new ImageRecognitionManager.ImageRecognitionCallback() {
-    //            @Override
-    //            public void onRecognitionResult(String content) {
-    //                mainHandler.post(() -> {
-    //                        // 直接发送文本消息
-    //                        if (webSocketManager != null && webSocketManager.isConnected()) {
-    //                        try {
-    //                            JSONObject jsonMessage = new JSONObject();
-    //                            jsonMessage.put("type", "listen");
-    //                            jsonMessage.put("state", "detect");
-    //                            // 根据视频理解状态和内容长度动态调整提示词，优化响应速度
-    //                            String prompt;
-    //                            if (isVideoUnderstanding || content.length() > 100) {
-    //                                // 主动视频理解或长内容使用完整复述
-    //                                prompt = "[视觉]:" + content + "。请用自然流畅的语言完整地复述这个视觉描述，保持内容的连贯性和完整性。";
-    //                            } else {
-    //                                // 普通图像识别场景使用简洁回复，提高响应速度
-    //                                prompt = "[视觉]:" + content + "。请简洁地描述看到的内容。";
-    //                            }
-    //                            jsonMessage.put("text", prompt);
-    //                            
-    //                            // 重置视频理解状态
-    //                            isVideoUnderstanding = false;
-    //                            jsonMessage.put("source", "text");
-    //                            // 使用优先级发送确保图像识别结果及时处理
-    //                            webSocketManager.sendPriorityMessage(jsonMessage.toString());
-    //                        } catch (Exception e) {
-    //                            Log.e("VoiceCall", "发送识别消息失败", e);
-    //                        }
-    //                    }
-    //                    // Toast.makeText(Voice.this, "识别结果: " + content, Toast.LENGTH_SHORT).show(); // 隐藏识别结果Toast，只保留用户语音输入
-    //                    Log.d("ImageRecognition", "识别结果: " + content);
-    //                });
-    //            }
-    //
-    //            @Override
-    //            public void onRecognitionError(String errorMessage) {
-    //                mainHandler.post(() -> {
-    //                        Toast.makeText(Voice.this, "识别失败: " + errorMessage, Toast.LENGTH_SHORT).show();
-    //                        Log.e("ImageRecognition", "识别失败: " + errorMessage);
-    //                    });
-    //            }
-    //        });
-    //    } catch (Exception e) {
-    //        Log.e("VoiceCall", "初始化图像识别管理器失败", e);
-    //        mainHandler.post(() -> Toast.makeText(this, "初始化图像识别失败: " + e.getMessage(), Toast.LENGTH_SHORT).show());
-    //        imageRecognitionManager = null;
-    //    }
-    //}
-    ////相机识别
-    //private void captureFrame() {
-    //    if (cameraProvider == null || frameCache == null) {
-    //        Toast.makeText(this, "相机未启动", Toast.LENGTH_SHORT).show();
-    //        return;
-    //    }
-    //
-    //    if (imageRecognitionManager == null) {
-    //        Toast.makeText(Voice.this, "未配置讯飞API，无法使用图像识别功能", Toast.LENGTH_SHORT).show();
-    //        return;
-    //    }
-    //    // 从缓存中获取最新的一帧
-    //    FrameCache.FrameData latestFrame = frameCache.getLatestFrame();
-    //    if (latestFrame == null) {
-    //        Toast.makeText(this, "暂无可用帧", Toast.LENGTH_SHORT).show();
-    //        return;
-    //    }
-    //    // 检查帧是否过期
-    //    long frameAge = System.currentTimeMillis() - latestFrame.timestamp;
-    //    if (frameAge > 3000) {
-    //        Toast.makeText(this, "帧数据已过期", Toast.LENGTH_SHORT).show();
-    //        return;
-    //    }
-    //
-    //    isVideoUnderstanding = true;
-    //    // 处理图像帧
-    //    try {
-    //        imageRecognitionManager.processPreviewFrameFromCameraX(
-    //            latestFrame.yuvData, 
-    //            latestFrame.width, 
-    //            latestFrame.height
-    //        );
-    //        Toast.makeText(Voice.this, "正在识别图像...", Toast.LENGTH_SHORT).show();
-    //    } catch (Exception e) {
-    //        Log.e("CameraPreview", "图像处理失败: " + e.getMessage());
-    //        isVideoUnderstanding = false;
-    //    }
-    //}
-
     private void startContinuousFrameCapture() {//开始连续捕获视频帧
         ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()//创建图像分析器
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -1559,25 +1417,32 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
 
     private void sendVisionRequest(String question, int mcpId) {
+        Log.d("VoiceCall-MCP", "sendVisionRequest开始, mcpId=" + mcpId + ", frameCache=" + (frameCache != null));
         if (visionUrl == null || visionToken == null) {
-            Log.w("VoiceCall", "视觉URL或Token未初始化");
+            Log.w("VoiceCall-MCP", "视觉URL或Token未初始化");
             sendMcpError(mcpId, "视觉服务未初始化");
             return;
         }
         if (frameCache == null) {
-            Log.w("VoiceCall", "摄像头帧缓存未初始化");
+            Log.w("VoiceCall-MCP", "摄像头帧缓存未初始化");
             sendMcpError(mcpId, "摄像头未启动");
             return;
         }
         FrameCache.FrameData latestFrame = frameCache.getLatestFrame();
         if (latestFrame == null) {
+            Log.w("VoiceCall-MCP", "暂无摄像头画面");
             sendMcpError(mcpId, "暂无摄像头画面");
             return;
         }
+        Log.d("VoiceCall-MCP", "获取到帧, size=" + latestFrame.yuvData.length + ", age=" + (System.currentTimeMillis() - latestFrame.timestamp) + "ms");
 
-        cameraExecutor.execute(() -> {
+        isMcpInProgress = true;
+        mainHandler.post(pingRunnable);
+        new Thread(() -> {
+            long t0 = System.currentTimeMillis();
             try {
                 byte[] jpegData = yuvToJpeg(latestFrame.yuvData, latestFrame.width, latestFrame.height);
+                Log.d("VoiceCall-MCP", "JPEG编码完成, size=" + (jpegData != null ? jpegData.length : 0) + ", 耗时=" + (System.currentTimeMillis() - t0) + "ms");
                 if (jpegData == null) {
                     sendMcpError(mcpId, "图像编码失败");
                     return;
@@ -1598,10 +1463,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                         .post(requestBody)
                         .build();
 
-                Log.d("VoiceCall-MCP", "发送视觉请求: " + visionUrl);
+                long t1 = System.currentTimeMillis();
+                Log.d("VoiceCall-MCP", "HTTP POST开始: " + visionUrl);
                 try (Response response = httpClient.newCall(request).execute()) {
+                    long t2 = System.currentTimeMillis();
                     String body = response.body() != null ? response.body().string() : "";
-                    Log.d("VoiceCall-MCP", "视觉响应: " + body);
+                    Log.d("VoiceCall-MCP", "视觉响应, 耗时=" + (t2 - t1) + "ms, code=" + response.code() + ", body=" + body);
                     if (response.isSuccessful()) {
                         JSONObject result = new JSONObject(body);
                         String visionText = result.optString("response", result.toString());
@@ -1611,10 +1478,14 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     }
                 }
             } catch (Exception e) {
-                Log.e("VoiceCall-MCP", "视觉请求失败", e);
+                Log.e("VoiceCall-MCP", "视觉请求失败, 耗时=" + (System.currentTimeMillis() - t0) + "ms", e);
                 sendMcpError(mcpId, "视觉请求异常: " + e.getMessage());
+            } finally {
+                isMcpInProgress = false;
+                mainHandler.removeCallbacks(pingRunnable);
+                Log.d("VoiceCall-MCP", "sendVisionRequest结束, 总耗时=" + (System.currentTimeMillis() - t0) + "ms");
             }
-        });
+        }).start();
     }
 
     private void sendMcpResult(int mcpId, String text) {
@@ -1780,11 +1651,6 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     voice.initWebSocket();
                     Log.d("XiaoZhiPerf", "Voice WebSocket初始化耗时: " + (System.currentTimeMillis() - startTime) + "ms");
                     break;
-                //case MSG_INIT_IMAGE:
-                //    startTime = System.currentTimeMillis();
-                //    voice.initImageRecognition();
-                //    Log.d("XiaoZhiPerf", "Voice图像识别初始化耗时: " + (System.currentTimeMillis() - startTime) + "ms");
-                //    break;
             }
         }
     }
