@@ -1106,6 +1106,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     // 短暂等待消息发送
                     Thread.sleep(100);
                 }
+                webSocketManager.removeListener();
                 webSocketManager.disconnect();
             } catch (Exception e) {
                 Log.e("Voice", "断开WebSocket失败", e);

@@ -23,7 +23,7 @@ import java.lang.ref.WeakReference;
 
 public class WebSocketManager {
     private static final String TAG = "WebSocketManager";
-    private static WebSocketManager instance;  // 单例实例
+    private static WebSocketManager instance;  // 懒汉单例
     
     private WebSocketClient client;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
