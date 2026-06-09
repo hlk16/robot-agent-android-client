@@ -56,6 +56,7 @@ import org.json.JSONObject;
 import org.json.JSONArray;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ExecutionException;
 import com.google.common.util.concurrent.ListenableFuture;
 import java.lang.ref.WeakReference;
@@ -134,7 +135,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     * 启动播放时设为 true，播放线程会循环从 audioQueue 取数据。
     停止播放时设为 false，播放线程检测到状态变化后会退出循环，释放资源。
     * */
-    private BlockingQueue<byte[]> audioQueue;//阻塞队列
+    private BlockingQueue<byte[]> audioQueue;//音频播放队列
+
+    // 录音采集队列：录音线程只负责采集，编码发送由独立线程处理
+    private BlockingQueue<byte[]> recordQueue = new LinkedBlockingQueue<>(10);
+    private volatile boolean isEncoderThreadRunning = false;
+    private ExecutorService audioEncoderExecutor; // 编码发送专用线程池
 
     private volatile boolean isPlaybackThreadRunning = false;//volatile 修饰的布尔变量，保证多线程下的可见性。作用：作为播放线程的 “运行状态标记”，用于安全地启动、停止播放线程。
     private ExecutorService playbackExecutor;//线程池对象，用于管理播放线程的生命周期。
@@ -275,9 +281,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
     private void initAudio() {
         //采集，发送
-        executorService = Executors.newSingleThreadExecutor();//音频采集，编码和发送   从麦克风读取 PCM 数据 → Opus 编码 → WebSocket 发送（第474行）
+        executorService = Executors.newSingleThreadExecutor();//音频采集：从麦克风读取 PCM 数据放入队列
+        audioEncoderExecutor = Executors.newSingleThreadExecutor();//编码发送：从队列取数据 → Opus 编码 → WebSocket 发送
         //接收，播放
-        audioExecutor = Executors.newSingleThreadExecutor();//音频解码和播放控制   WebSocket 接收 Opus 数据 → 解码为 PCM（第974行）；暂停/停止播放（第845行）
+        audioExecutor = Executors.newSingleThreadExecutor();//音频解码和播放控制   WebSocket 接收 Opus 数据 → 解码为 PCM；暂停/停止播放
         playbackExecutor = Executors.newSingleThreadExecutor();//音频播放
         //摄像头分析
         cameraExecutor = Executors.newSingleThreadExecutor();//摄像头分析
@@ -459,33 +466,35 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
 
     /*
-    * 本地录制编码发送音频
+    * 本地录制音频
+    * 优化：录音线程只负责采集，编码发送由独立线程通过队列处理
+    * 避免编码耗时阻塞录音循环，减少音频丢失
     * */
     @SuppressLint("MissingPermission")
-    private void startRecording() {//开始一直录音
+    private void startRecording() {
         if (audioRecord == null) {
-            audioRecord = new AudioRecord(//创建录音对象
+            audioRecord = new AudioRecord(
                     MediaRecorder.AudioSource.VOICE_COMMUNICATION,
                     SAMPLE_RATE,
                     CHANNEL_CONFIG,
                     AUDIO_FORMAT,
                     BUFFER_SIZE
             );
-            
+
             // 启用回声消除器
             if (AcousticEchoCanceler.isAvailable()) {
-                echoCanceler = AcousticEchoCanceler.create(audioRecord.getAudioSessionId());//创建绑定
+                echoCanceler = AcousticEchoCanceler.create(audioRecord.getAudioSessionId());
                 if (echoCanceler != null) {
-                    echoCanceler.setEnabled(true);//启用
+                    echoCanceler.setEnabled(true);
                     Log.d("VoiceCall", "AcousticEchoCanceler enabled");
                 }
             }
 
             // 启用噪声抑制器
             if (NoiseSuppressor.isAvailable()) {
-                noiseSuppressor = NoiseSuppressor.create(audioRecord.getAudioSessionId());//创建绑定
+                noiseSuppressor = NoiseSuppressor.create(audioRecord.getAudioSessionId());
                 if (noiseSuppressor != null) {
-                    noiseSuppressor.setEnabled(true);//启用
+                    noiseSuppressor.setEnabled(true);
                     Log.d("VoiceCall", "NoiseSuppressor enabled");
                 }
             }
@@ -497,23 +506,48 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             return;
         }
 
-        executorService.execute(() -> {//告诉线程池：帮我跑一下后面这段代码。
+        // 清空录音队列
+        recordQueue.clear();
+
+        // 录音线程：只负责从麦克风采集数据，放入队列
+        executorService.execute(() -> {
             try {
                 audioRecord.startRecording();
                 byte[] buffer = new byte[BUFFER_SIZE];
-                // 独占单线程池，循环这个任务，直到isRecording为false
                 while (isRecording) {
                     int read = audioRecord.read(buffer, 0, BUFFER_SIZE);
-                    if (read > 0 && !isMuted) {
-                        // 发送音频数据
-                        sendAudioData(buffer, read);
-                        // 更新波形图
-                        updateUserWaveform(buffer);
+                    if (read > 0) {
+                        // 拷贝数据放入队列（buffer会被复用，必须拷贝）
+                        byte[] data = new byte[read];
+                        System.arraycopy(buffer, 0, data, 0, read);
+                        if (!recordQueue.offer(data)) {
+                            recordQueue.poll(); // 队列满时丢弃最旧的
+                            recordQueue.offer(data);
+                        }
                     }
                 }
             } catch (Exception e) {
                 Log.e("VoiceCall", "录音失败", e);
             }
+        });
+
+        // 编码发送线程：从队列取数据，编码后发送
+        isEncoderThreadRunning = true;
+        audioEncoderExecutor.execute(() -> {
+            Log.d("VoiceCall", "编码发送线程启动");
+            while (isEncoderThreadRunning) {
+                try {
+                    byte[] data = recordQueue.poll(10, TimeUnit.MILLISECONDS);
+                    if (data != null && !isMuted) {
+                        sendAudioData(data, data.length);
+                        updateUserWaveform(data);
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            Log.d("VoiceCall", "编码发送线程结束");
         });
     }
     //发音频
@@ -580,7 +614,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     }
     private void stopRecording() {
         isRecording = false;
-        
+        isEncoderThreadRunning = false;
+        recordQueue.clear();
+
         // 释放回声消除器
         if (echoCanceler != null) {
             echoCanceler.setEnabled(false);
@@ -661,6 +697,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             // 关闭线程池
             if (executorService != null && !executorService.isShutdown()) {
                 executorService.shutdown();
+            }
+            if (audioEncoderExecutor != null && !audioEncoderExecutor.isShutdown()) {
+                audioEncoderExecutor.shutdown();
             }
             if (audioExecutor != null && !audioExecutor.isShutdown()) {
                 audioExecutor.shutdown();
@@ -1142,6 +1181,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         
         // 8. 关闭线程池（等待完成）
         shutdownExecutor(executorService);
+        shutdownExecutor(audioEncoderExecutor);
         shutdownExecutor(audioExecutor);
         shutdownExecutor(playbackExecutor);
         
