@@ -29,8 +29,7 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import com.google.android.material.navigation.NavigationView;
 import androidx.appcompat.app.AlertDialog;
 import android.content.SharedPreferences;
-import com.iflytek.sparkchain.core.SparkChain;
-import com.iflytek.sparkchain.core.SparkChainConfig;
+
 import com.lhht.xiaozhi.R;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
@@ -156,8 +155,6 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     private NavigationView navigationView;
     private ImageButton menuButton;
 
-    private boolean isAuth = false;
-    
     // 定义一个TTS消息类，相当于消息队列一个数据包裹类（DTO/Data Class）
     private static class TTSMessage {
         final String text;
@@ -319,10 +316,10 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         // 2. 初始化视图（必须在主线程）
         initViews();
         
-        // 3. 延迟初始化SDK和Native库（后台线程）
+        // 3. 预加载Native库（后台线程，避免阻塞UI）
         new Thread(() -> {
             long sdkStart = System.currentTimeMillis();
-            
+
             // 预加载Native库（在后台线程触发类加载，避免阻塞主线程）
             try {
                 Class.forName("vip.inode.demo.opusaudiodemo.utils.OpusUtils");
@@ -330,9 +327,8 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
             } catch (ClassNotFoundException e) {
                 Log.e("XiaoZhiPerf", "OpusUtils类加载失败", e);
             }
-            
-            initSDK();
-            Log.d("XiaoZhiPerf", "SDK初始化耗时: " + (System.currentTimeMillis() - sdkStart) + "ms");
+
+            Log.d("XiaoZhiPerf", "Native库预加载耗时: " + (System.currentTimeMillis() - sdkStart) + "ms");
         }).start();
         
         // 4. 延迟初始化非关键组件  "延迟"是 语义上的延迟 （相对于UI初始化）
@@ -447,7 +443,7 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
                 Log.d("WebSocket", "连接请求已发送");
             } catch (Exception e) {
                 Log.e("WebSocket", "连接失败: " + e.getMessage());
-                Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                Toast.makeText(this, getFriendlyErrorMessage(e.getMessage()), Toast.LENGTH_SHORT).show();
             }
         } else {
             Log.d("WebSocket", "执行断开连接");
@@ -538,11 +534,42 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
     public void onError(String error) {
         Log.e("WebSocket", "错误: " + error);
         addLog("Error", error);
+        String userMsg = getFriendlyErrorMessage(error);
         mainHandler.post(() -> {
             connectionStatus.setText(getString(R.string.connection_status, getString(R.string.status_error)));
             connectButton.setText(R.string.connect);
-            Toast.makeText(MainActivity.this, "错误: " + error, Toast.LENGTH_SHORT).show();
+            Toast.makeText(MainActivity.this, userMsg, Toast.LENGTH_SHORT).show();
         });
+    }
+
+    private String getFriendlyErrorMessage(String error) {
+        if (error == null) return "连接异常，请重试";
+
+        String lower = error.toLowerCase();
+
+        if (lower.contains("timeout") || lower.contains("超时")) {
+            return "连接超时，请检查网络是否正常";
+        }
+        if (lower.contains("refused") || lower.contains("拒绝")) {
+            return "服务器拒绝连接，请检查地址是否正确";
+        }
+        if (lower.contains("unreachable") || lower.contains("noroutetohost") || lower.contains("noroute")) {
+            return "无法访问服务器，请检查网络或服务器地址";
+        }
+        if (lower.contains("resolve") || lower.contains("unknownhost") || lower.contains("unknown host") || lower.contains("地址")) {
+            return "服务器地址无法解析，请检查地址是否正确";
+        }
+        if (lower.contains("ssl") || lower.contains("certificate") || lower.contains("handshake") || lower.contains("证书")) {
+            return "安全连接失败，请检查服务器证书配置";
+        }
+        if (lower.contains("interrupt") || lower.contains("中断")) {
+            return "连接被中断，请重试";
+        }
+        if (lower.contains("empty") || lower.contains("为空")) {
+            return "服务器地址未配置，请在设置中填写";
+        }
+
+        return "连接失败: " + error;
     }
 
     @Override
@@ -823,36 +850,4 @@ public class MainActivity extends AppCompatActivity implements WebSocketManager.
         }
     }
 
-    private void initSDK() {
-        Log.d("SDK", "正在初始化SDK...");
-        
-        // 从设置管理器获取用户输入的API配置
-        SettingsManager settingsManager = new SettingsManager(this);
-        String appId = settingsManager.getAppId();
-        String apiKey = settingsManager.getApiKey();
-        String apiSecret = settingsManager.getApiSecret();
-        
-        // 检查API配置是否完整
-        if (appId.isEmpty() || apiKey.isEmpty() || apiSecret.isEmpty()) {
-            Log.w("SDK", "API配置不完整，请在设置中配置appID、apiKey和apiSecret");
-            mainHandler.post(() -> Toast.makeText(MainActivity.this, "请先在设置中配置API信息", Toast.LENGTH_LONG).show());
-            return;
-        }
-        
-        // 初始化SDK，使用用户配置的API数据
-        SparkChainConfig sparkChainConfig = SparkChainConfig.builder()
-                .appID(appId)
-                .apiKey(apiKey)
-                .apiSecret(apiSecret)
-                .logLevel(666);
-
-        int ret = SparkChain.getInst().init(getApplicationContext(), sparkChainConfig);
-        isAuth = (ret == 0);
-        Log.d("SDK", isAuth ? "SDK初始化成功" : "SDK初始化失败,错误码: " + ret);
-        if (isAuth) {
-//            runOnUiThread(() -> Toast.makeText(this, "SDK初始化成功", Toast.LENGTH_SHORT).show());
-        } else {
-            mainHandler.post(() -> Toast.makeText(MainActivity.this, "SDK初始化失败，请检查API配置", Toast.LENGTH_LONG).show());
-        }
-    }
 }

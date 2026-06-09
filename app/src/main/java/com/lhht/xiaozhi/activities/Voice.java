@@ -98,8 +98,8 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     private static final int BUFFER_SIZE = AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT);
 
 
-    //物理扬声器音频播放的缓冲区大小 - 使用最小缓冲区以降低延迟
-    private static final int PLAY_BUFFER_SIZE = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AUDIO_FORMAT) * 1;
+    //物理扬声器音频播放的缓冲区大小 - 2倍最小缓冲区，平衡延迟和稳定性
+    private static final int PLAY_BUFFER_SIZE = AudioTrack.getMinBufferSize(SAMPLE_RATE, AudioFormat.CHANNEL_OUT_MONO, AUDIO_FORMAT) * 2;
     //Opus编码器的帧大小
     private static final int OPUS_FRAME_SIZE = 1440;
 
@@ -135,7 +135,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     * 启动播放时设为 true，播放线程会循环从 audioQueue 取数据。
     停止播放时设为 false，播放线程检测到状态变化后会退出循环，释放资源。
     * */
-    private BlockingQueue<byte[]> audioQueue;//音频播放队列
+    private static final int AUDIO_QUEUE_SIZE = 20; // 音频播放队列容量
+    private static final int PRE_BUFFER_COUNT = 3;  // 预缓冲帧数，攒够再播放
+    private BlockingQueue<byte[]> audioQueue;//音频播放队列（有界）
 
     // 录音采集队列：录音线程只负责采集，编码发送由独立线程处理
     private BlockingQueue<byte[]> recordQueue = new LinkedBlockingQueue<>(10);
@@ -274,8 +276,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             updateCallStatus("正在连接...");
         } catch (Exception e) {
             Log.e("VoiceCall", "WebSocket连接失败", e);
-            updateCallStatus("连接失败: " + e.getMessage());
-            Toast.makeText(this, "连接失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            String userMsg = getFriendlyErrorMessage(e.getMessage());
+            updateCallStatus(userMsg);
+            Toast.makeText(this, userMsg, Toast.LENGTH_SHORT).show();
         }
     }
 
@@ -300,7 +303,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         requestAudioFocus();
         
         // 初始化音频播放队列
-        audioQueue = new LinkedBlockingQueue<>();//音频播放队列，用于存储解码后的PCM数据
+        audioQueue = new LinkedBlockingQueue<>(AUDIO_QUEUE_SIZE);//有界队列，防止内存溢出
         startPlaybackThread();
 
         // 初始化Opus编解码器
@@ -839,7 +842,42 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             Log.w("VoiceCall-Connection", "MCP进行中, 忽略WebSocket错误, 等待重连...");
             return;
         }
-        updateCallStatus("错误: " + error);
+        String userMsg = getFriendlyErrorMessage(error);
+        updateCallStatus(userMsg);
+        Toast.makeText(this, userMsg, Toast.LENGTH_SHORT).show();
+    }
+
+    private String getFriendlyErrorMessage(String error) {
+        if (error == null) return "连接异常，请重试";
+
+        String lower = error.toLowerCase();
+
+        if (lower.contains("timeout") || lower.contains("超时")) {
+            return "连接超时，请检查网络是否正常";
+        }
+        if (lower.contains("refused") || lower.contains("拒绝")) {
+            return "服务器拒绝连接，请检查地址是否正确";
+        }
+        if (lower.contains("unreachable") || lower.contains("unreachable")
+                || lower.contains("noroutetohost") || lower.contains("noroute")) {
+            return "无法访问服务器，请检查网络或服务器地址";
+        }
+        if (lower.contains("resolve") || lower.contains("unknownhost")
+                || lower.contains("unknown host") || lower.contains("地址")) {
+            return "服务器地址无法解析，请检查地址是否正确";
+        }
+        if (lower.contains("ssl") || lower.contains("certificate")
+                || lower.contains("handshake") || lower.contains("证书")) {
+            return "安全连接失败，请检查服务器证书配置";
+        }
+        if (lower.contains("interrupt") || lower.contains("中断")) {
+            return "连接被中断，请重试";
+        }
+        if (lower.contains("empty") || lower.contains("为空")) {
+            return "服务器地址未配置，请在设置中填写";
+        }
+
+        return "连接失败: " + error;
     }
 
     @Override
@@ -1084,11 +1122,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                 if (decodedSamples > 0) {
                     byte[] pcmData = new byte[decodedSamples * 2];//创建一个字节数组，大小刚好用于存储解码后的PCM数据
                     java.nio.ByteBuffer.wrap(pcmData).order(java.nio.ByteOrder.LITTLE_ENDIAN).asShortBuffer().put(decodedBuffer, 0, decodedSamples);
-                    //将解码后的PCM数据放入阻塞队列
+                    //将解码后的PCM数据放入队列，满时丢弃最旧数据保持实时性
                     if (audioQueue != null) {
-                        boolean offered = audioQueue.offer(pcmData);//尝试将PCM数据放入队列，返回是否成功放入
-                        if (!offered) {
-                            Log.w("AudioDebug", "音频队列已满，丢弃数据");
+                        if (!audioQueue.offer(pcmData)) {
+                            audioQueue.poll(); // 丢弃最旧的
+                            audioQueue.offer(pcmData);
+                            Log.w("AudioDebug", "音频队列已满，丢弃最旧帧");
                         }
                     }
                     //更新AI波形图
@@ -1240,49 +1279,88 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
 
     /*
     * 启动播放线程
+    * 优化：添加预缓冲机制，攒够 PRE_BUFFER_COUNT 帧再开始播放
+    * 避免网络抖动导致的音频卡顿
     * */
-    private void startPlaybackThread() {//启动播放线程
-         // 检查线程池状态
+    private void startPlaybackThread() {
          if (playbackExecutor == null || playbackExecutor.isShutdown() || playbackExecutor.isTerminated()) {
              Log.w("VoiceCall", "PlaybackExecutor已关闭，无法启动播放线程");
              return;
          }
-         
+
          isPlaybackThreadRunning = true;
-         playbackExecutor.execute(() -> {//提交播放任务
+         playbackExecutor.execute(() -> {
              Log.d("AudioPlayback", "播放线程启动");
+             boolean needPreBuffer = true; // 是否需要预缓冲
+
              while (isPlaybackThreadRunning) {
                  try {
-                     // 从队列中取出音频数据，降低轮询超时以减少延迟  从队列取数据，10ms超时（非阻塞轮询）
-                     //音频不能等
-                    byte[] pcmData = audioQueue.poll(10, java.util.concurrent.TimeUnit.MILLISECONDS);
+                     byte[] pcmData = audioQueue.poll(10, java.util.concurrent.TimeUnit.MILLISECONDS);
                      if (pcmData == null) {
-                         continue; // 超时，继续循环检查
+                         // 队列为空，下次需要重新预缓冲
+                         if (isPlaying) {
+                             // 播放中队列空了 = underrun，暂停等缓冲
+                             audioTrack.pause();
+                             isPlaying = false;
+                             needPreBuffer = true;
+                             Log.d("AudioPlayback", "队列空，暂停播放等待缓冲");
+                         }
+                         continue;
                      }
-                     
-                     // 记录音频开始播放时间
-                     long playbackStartTime = System.currentTimeMillis();
-                     Log.d("AudioPlayback", "从队列取出音频数据: " + pcmData.length + " bytes, 开始播放时间戳: " + playbackStartTime);
-                     
-                     // 确保AudioTrack已初始化
-                     if (audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
-                         initAudioTrack();
-                         Log.d("AudioTrack", "Reinitialized audio track");
+
+                     // 预缓冲：攒够一定帧数再开始播放，吸收网络抖动
+                     if (needPreBuffer) {
+                         int buffered = audioQueue.size();
+                         if (buffered < PRE_BUFFER_COUNT) {
+                             // 还没攒够，先把数据存回队列前面不行，直接存到临时列表
+                             java.util.ArrayList<byte[]> bufferList = new java.util.ArrayList<>();
+                             bufferList.add(pcmData);
+                             // 继续取数据直到攒够或超时
+                             while (bufferList.size() < PRE_BUFFER_COUNT && isPlaybackThreadRunning) {
+                                 byte[] more = audioQueue.poll(50, java.util.concurrent.TimeUnit.MILLISECONDS);
+                                 if (more != null) {
+                                     bufferList.add(more);
+                                 } else {
+                                     break; // 超时，有多少播多少
+                                 }
+                             }
+                             Log.d("AudioPlayback", "预缓冲: 攒了 " + bufferList.size() + " 帧");
+
+                             // 确保 AudioTrack 就绪
+                             ensureAudioTrackReady();
+
+                             // 写入所有预缓冲数据
+                             if (audioTrack != null && audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
+                                 audioTrack.play();
+                                 isPlaying = true;
+                                 for (byte[] data : bufferList) {
+                                     audioTrack.write(data, 0, data.length, AudioTrack.WRITE_BLOCKING);
+                                 }
+                             }
+                             needPreBuffer = false;
+                             continue;
+                         }
+                         needPreBuffer = false;
                      }
-                     
-                     // 开始播放
-                     if (!isPlaying && audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
-                         audioTrack.play();//启动音频流播放，让 AudioTrack 进入可出声状态
+
+                     // 正常播放模式
+                     ensureAudioTrackReady();
+
+                     if (!isPlaying && audioTrack != null && audioTrack.getState() == AudioTrack.STATE_INITIALIZED) {
+                         audioTrack.play();
                          isPlaying = true;
-                         Log.d("AudioTrack", "Playback started");
+                         Log.d("AudioPlayback", "恢复播放");
                      }
-                     
-                     // 写入音频数据
+
                      if (isPlaying && audioTrack != null) {
                          int bytesWritten = audioTrack.write(pcmData, 0, pcmData.length, AudioTrack.WRITE_BLOCKING);
-                         Log.d("AudioDebug", "写入AudioTrack字节数: " + bytesWritten);
-                         // 记录音频写入完成时间
-                         long writeCompleteTime = System.currentTimeMillis();
+                         if (bytesWritten < 0) {
+                             Log.e("AudioPlayback", "AudioTrack写入错误: " + bytesWritten);
+                             // 重新初始化 AudioTrack
+                             isPlaying = false;
+                             initAudioTrack();
+                             needPreBuffer = true;
+                         }
                      }
                  } catch (InterruptedException e) {
                      Log.d("AudioPlayback", "播放线程被中断");
@@ -1294,6 +1372,13 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
              Log.d("AudioPlayback", "播放线程结束");
          });
      }
+
+    private void ensureAudioTrackReady() {
+        if (audioTrack == null || audioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
+            initAudioTrack();
+            Log.d("AudioTrack", "Reinitialized audio track");
+        }
+    }
      
      private void stopPlaybackThread() {
          Log.d("AudioPlayback", "停止播放线程");
