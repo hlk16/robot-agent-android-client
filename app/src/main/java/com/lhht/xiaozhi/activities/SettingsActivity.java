@@ -25,9 +25,6 @@ import java.util.concurrent.Executors;
 public class SettingsActivity extends AppCompatActivity {
     private SettingsManager settingsManager;
     private TextInputEditText tokenInput;
-    private TextInputEditText appIdInput;
-    private TextInputEditText apiKeyInput;
-    private TextInputEditText apiSecretInput;
     private SwitchMaterial enableTokenSwitch;
     private RecyclerView wsUrlList;
     private MaterialButton addWsUrlButton;
@@ -50,9 +47,6 @@ public class SettingsActivity extends AppCompatActivity {
         settingsManager = new SettingsManager(this);
         
         tokenInput = findViewById(R.id.tokenInput);
-        appIdInput = findViewById(R.id.getAppId);
-        apiKeyInput = findViewById(R.id.getApiKey);
-        apiSecretInput = findViewById(R.id.getApiSecret);
         enableTokenSwitch = findViewById(R.id.enableTokenSwitch);
         ExtendedFloatingActionButton saveButton = findViewById(R.id.saveButton);
         wsUrlList = findViewById(R.id.wsUrlList);
@@ -78,9 +72,6 @@ public class SettingsActivity extends AppCompatActivity {
         // 保存设置
         saveButton.setOnClickListener(v -> {
             String token = tokenInput.getText().toString();
-            String appId = appIdInput.getText().toString();
-            String apiKey = apiKeyInput.getText().toString();
-            String apiSecret = apiSecretInput.getText().toString();
             boolean enableToken = enableTokenSwitch.isChecked();
 
             // 获取当前所有WebSocket地址
@@ -91,7 +82,6 @@ public class SettingsActivity extends AppCompatActivity {
             if (!selectedWsUrl.isEmpty()) {
                 settingsManager.saveSettings(selectedWsUrl, token, enableToken);
             }
-            settingsManager.saveApiSettings(appId, apiKey, apiSecret);
             settingsManager.saveWsUrls(new HashSet<>(currentUrls));
             finish();
         });
@@ -101,9 +91,6 @@ public class SettingsActivity extends AppCompatActivity {
         executorService.execute(() -> {
             // 后台线程加载数据
             final String token = settingsManager.getToken();
-            final String appId = settingsManager.getAppId();
-            final String apiKey = settingsManager.getApiKey();
-            final String apiSecret = settingsManager.getApiSecret();
             final boolean tokenEnabled = settingsManager.isTokenEnabled();
             final String currentWsUrl = settingsManager.getWsUrl();
             
@@ -117,9 +104,6 @@ public class SettingsActivity extends AppCompatActivity {
             // 切换到主线程更新UI
             mainHandler.post(() -> {
                 tokenInput.setText(token);
-                appIdInput.setText(appId);
-                apiKeyInput.setText(apiKey);
-                apiSecretInput.setText(apiSecret);
                 enableTokenSwitch.setChecked(tokenEnabled);
                 setupWsUrlList(finalUrls, currentWsUrl);
                 updateTokenInputState();

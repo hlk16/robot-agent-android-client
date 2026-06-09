@@ -41,6 +41,7 @@ import com.lhht.xiaozhi.websocket.WebSocketManager;
 import vip.inode.demo.opusaudiodemo.utils.OpusUtils;
 
 import org.json.JSONObject;
+import org.json.JSONArray;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.BlockingQueue;
@@ -61,9 +62,22 @@ import android.content.pm.PackageManager;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
 import androidx.camera.core.CameraSelector;
+import androidx.camera.core.ImageAnalysis;
+import androidx.camera.core.ImageProxy;
 import androidx.camera.core.Preview;
 import androidx.camera.lifecycle.ProcessCameraProvider;
 import androidx.camera.view.PreviewView;
+
+import android.graphics.YuvImage;
+import android.graphics.Rect;
+import java.io.ByteArrayOutputStream;
+
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 
 public class VoiceCallActivity extends AppCompatActivity implements WebSocketManager.WebSocketListener {
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
@@ -120,7 +134,33 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     public static char order='x';
     public static double roadDistance = 0.0; // 距离右侧车道线距离，用于蓝牙发送
     private boolean isVideoUnderstanding = false; // 标识是否正在进行视频理解
-    
+
+    // 视频帧缓存
+    private FrameCache frameCache;
+    private long lastFrameCaptureTime = 0;
+    private static final int FRAME_CAPTURE_INTERVAL_MS = 1000; // 帧间隔每秒捕获一帧
+
+    // MCP 视觉识别
+    private String visionUrl = null;
+    private String visionToken = null;
+    private volatile boolean isMcpInProgress = false;
+    private static final long PING_INTERVAL_MS = 5000;
+    private final Runnable pingRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (!isMcpInProgress) return;
+            if (webSocketManager != null && webSocketManager.isConnected()) {
+                webSocketManager.sendMessage("{\"type\":\"ping\"}");
+            }
+            mainHandler.postDelayed(this, PING_INTERVAL_MS);
+        }
+    };
+    private final OkHttpClient httpClient = new OkHttpClient.Builder()
+            .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+            .writeTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+            .build();
+
     // 回声消除相关
     private AcousticEchoCanceler echoCanceler;
     private NoiseSuppressor noiseSuppressor;
@@ -210,7 +250,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private void initWebSocket() {
         // 从MainActivity获取WebSocket配置
 //        String deviceId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
-        String deviceId = "3c:84:27:c8:45:10";
+        String deviceId = "c0:3e:ba:2e:d5:97";
         SettingsManager settingsManager = new SettingsManager(this);
         String wsUrl = settingsManager.getWsUrl();
         String token = settingsManager.getToken();
@@ -333,6 +373,9 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         cameraProviderFuture.addListener(() -> {
             try {
                 cameraProvider = cameraProviderFuture.get();
+                if (frameCache == null) {
+                    frameCache = new FrameCache();
+                }
                 bindCameraPreview();
             } catch (ExecutionException | InterruptedException e) {
                 Log.e("CameraPreview", "Error getting camera provider: " + e.getMessage());
@@ -344,24 +387,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private void bindCameraPreview() {
         if (cameraProvider == null) return;
 
-        cameraProvider.unbindAll();
-
-        CameraSelector cameraSelector = new CameraSelector.Builder()
-                .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
-                .build();
-
-        Preview preview = new Preview.Builder()
-                .build();
-
-        preview.setSurfaceProvider(frontCameraPreview.getSurfaceProvider());
-
-        try {
-            cameraProvider.bindToLifecycle(this, cameraSelector, preview);
-            isPreviewStarted = true;
-        } catch (Exception e) {
-            Log.e("CameraPreview", "Error binding camera preview: " + e.getMessage());
-            Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
-        }
+        startContinuousFrameCapture();
     }
 
     private void stopCameraPreview() {
@@ -393,13 +419,15 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         try {
             // 发送开始通话消息
             JSONObject startMessage = new JSONObject();
-            startMessage.put("type", "start");
+            startMessage.put("type", "hello");
             startMessage.put("mode", "auto");
             startMessage.put("audio_params", new JSONObject()
                     .put("format", "opus")
                     .put("sample_rate", SAMPLE_RATE)
                     .put("channels", 1)
                     .put("frame_duration", 60));
+            startMessage.put("features", new JSONObject()
+                    .put("mcp", true));
             webSocketManager.sendMessage(startMessage.toString());
 
             // 开始录音
@@ -571,6 +599,9 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             }
             if (playbackExecutor != null && !playbackExecutor.isShutdown()) {
                 playbackExecutor.shutdown();
+            }
+            if (cameraExecutor != null && !cameraExecutor.isShutdown()) {
+                cameraExecutor.shutdown();
             }
             
             // 释放Opus编解码器
@@ -747,12 +778,23 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
 
     @Override
     public void onDisconnected() {
+        Log.e("VoiceCall-Connection", "WebSocket连接断开, isMcpInProgress=" + isMcpInProgress);
+        if (isMcpInProgress) {
+            Log.w("VoiceCall-Connection", "MCP正在进行中, 不关闭Activity, 等待重连...");
+            updateCallStatus("连接断开(等待恢复)...");
+            return;
+        }
         updateCallStatus("连接已断开");
         endCall();
     }
 
     @Override
     public void onError(String error) {
+        Log.e("VoiceCall-Connection", "WebSocket错误: " + error + ", isMcpInProgress=" + isMcpInProgress);
+        if (isMcpInProgress) {
+            Log.w("VoiceCall-Connection", "MCP进行中, 忽略WebSocket错误, 等待重连...");
+            return;
+        }
         updateCallStatus("错误: " + error);
     }
 
@@ -774,6 +816,10 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
 
                 case "tts":
                     handleTTSMessage(jsonMessage);
+                    break;
+
+                case "mcp":
+                    handleMcpMessage(jsonMessage);
                     break;
 
                 case "action":
@@ -1168,6 +1214,12 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         shutdownExecutor(executorService);
         shutdownExecutor(audioExecutor);
         shutdownExecutor(playbackExecutor);
+        shutdownExecutor(cameraExecutor);
+
+        if (mainHandler != null) {
+            mainHandler.removeCallbacks(pingRunnable);
+        }
+        isMcpInProgress = false;
     }
 
     private void shutdownExecutor(ExecutorService executor) {
@@ -1341,6 +1393,316 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         // 设置视频理解状态为true，表示这是主动的视频理解请求
         isVideoUnderstanding = true;
         Toast.makeText(VoiceCallActivity.this, "正在识别图像...", Toast.LENGTH_SHORT).show();
+    }
+
+    private void handleMcpMessage(JSONObject message) {
+        try {
+            Log.d("VoiceCall-MCP", "收到MCP消息: " + message.toString());
+            JSONObject payload = message.getJSONObject("payload");
+            String method = payload.optString("method", "");
+            int mcpId = payload.optInt("id", 0);
+
+            if ("initialize".equals(method)) {
+                JSONObject capabilities = payload.optJSONObject("params")
+                        .optJSONObject("capabilities");
+                if (capabilities != null) {
+                    JSONObject vision = capabilities.optJSONObject("vision");
+                    if (vision != null) {
+                        visionUrl = vision.optString("url", null);
+                        visionToken = vision.optString("token", null);
+                        Log.d("VoiceCall-MCP", "视觉URL: " + visionUrl);
+                        Log.d("VoiceCall-MCP", "视觉Token: " + visionToken);
+                    }
+                }
+                JSONObject initResult = new JSONObject();
+                initResult.put("protocolVersion", "2024-11-05");
+                initResult.put("capabilities", new JSONObject());
+                JSONObject serverInfo = new JSONObject();
+                serverInfo.put("name", "AndroidClient");
+                serverInfo.put("version", "1.0.0");
+                initResult.put("serverInfo", serverInfo);
+                sendMcpJsonResult(mcpId, initResult);
+            } else if ("tools/list".equals(method)) {
+                JSONObject toolsResult = new JSONObject();
+                toolsResult.put("tools", new JSONArray()
+                        .put(new JSONObject()
+                                .put("name", "capture_photo")
+                                .put("description", "拍摄照片进行视觉分析。当用户询问视觉问题（如\"看到了什么\"/\"描述一下\"/\"这是什么\"）时调用此工具")
+                                .put("inputSchema", new JSONObject()
+                                        .put("type", "object")
+                                        .put("properties", new JSONObject()
+                                                .put("question", new JSONObject()
+                                                        .put("type", "string")
+                                                        .put("description", "需要询问视觉大模型的问题")))
+                                        .put("required", new JSONArray().put("question")))));
+                Log.d("VoiceCall-MCP", "回复MCP工具列表: capture_photo");
+                sendMcpJsonResult(mcpId, toolsResult);
+            } else if ("tools/call".equals(method)) {
+                JSONObject params = payload.optJSONObject("params");
+                String question = params.optJSONObject("arguments").optString("question", "描述画面中有什么");
+                sendVisionRequest(question, mcpId);
+            }
+        } catch (Exception e) {
+            Log.e("VoiceCall-MCP", "处理MCP消息失败", e);
+        }
+    }
+
+    private void startContinuousFrameCapture() {
+        ImageAnalysis imageAnalysis = new ImageAnalysis.Builder()
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build();
+
+        imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {
+            long currentTime = System.currentTimeMillis();
+            if (currentTime - lastFrameCaptureTime < FRAME_CAPTURE_INTERVAL_MS) {
+                imageProxy.close();
+                return;
+            }
+
+            lastFrameCaptureTime = currentTime;
+            byte[] yuvData = imageProxyToYuv420(imageProxy);
+            if (yuvData != null) {
+                int width = imageProxy.getWidth();
+                int height = imageProxy.getHeight();
+                frameCache.addFrame(yuvData, width, height);
+            }
+
+            imageProxy.close();
+        });
+
+        CameraSelector cameraSelector = new CameraSelector.Builder()
+                .requireLensFacing(CameraSelector.LENS_FACING_FRONT)
+                .build();
+
+        cameraProvider.unbindAll();
+        Preview preview = new Preview.Builder().build();
+        preview.setSurfaceProvider(frontCameraPreview.getSurfaceProvider());
+
+        try {
+            cameraProvider.bindToLifecycle(this, cameraSelector, preview, imageAnalysis);
+            isPreviewStarted = true;
+        } catch (Exception e) {
+            Log.e("CameraPreview", "绑定相机失败: " + e.getMessage());
+            Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private byte[] imageProxyToYuv420(ImageProxy imageProxy) {
+        ImageProxy.PlaneProxy[] planes = imageProxy.getPlanes();
+        if (planes.length < 3) return null;
+
+        ByteBuffer yBuffer = planes[0].getBuffer();
+        ByteBuffer uBuffer = planes[1].getBuffer();
+        ByteBuffer vBuffer = planes[2].getBuffer();
+
+        int ySize = yBuffer.remaining();
+        int uSize = uBuffer.remaining();
+        int vSize = vBuffer.remaining();
+
+        byte[] yuv = new byte[ySize + uSize + vSize];
+
+        yBuffer.get(yuv, 0, ySize);
+        vBuffer.get(yuv, ySize, vSize);
+        uBuffer.get(yuv, ySize + vSize, uSize);
+
+        return yuv;
+    }
+
+    private byte[] yuvToJpeg(byte[] yuvData, int width, int height) {
+        try {
+            YuvImage yuvImage = new YuvImage(yuvData, android.graphics.ImageFormat.NV21, width, height, null);
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            yuvImage.compressToJpeg(new Rect(0, 0, width, height), 80, out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            Log.e("VoiceCall", "YUV转JPEG失败", e);
+            return null;
+        }
+    }
+
+    private void sendVisionRequest(String question, int mcpId) {
+        Log.d("VoiceCall-MCP", "sendVisionRequest开始, mcpId=" + mcpId + ", frameCache=" + (frameCache != null));
+        if (visionUrl == null || visionToken == null) {
+            Log.w("VoiceCall-MCP", "视觉URL或Token未初始化");
+            sendMcpError(mcpId, "视觉服务未初始化");
+            return;
+        }
+        if (frameCache == null) {
+            Log.w("VoiceCall-MCP", "摄像头帧缓存未初始化");
+            sendMcpError(mcpId, "摄像头未启动");
+            return;
+        }
+        FrameCache.FrameData latestFrame = frameCache.getLatestFrame();
+        if (latestFrame == null) {
+            Log.w("VoiceCall-MCP", "暂无摄像头画面");
+            sendMcpError(mcpId, "暂无摄像头画面");
+            return;
+        }
+        Log.d("VoiceCall-MCP", "获取到帧, size=" + latestFrame.yuvData.length + ", age=" + (System.currentTimeMillis() - latestFrame.timestamp) + "ms");
+
+        isMcpInProgress = true;
+        mainHandler.post(pingRunnable);
+        new Thread(() -> {
+            long t0 = System.currentTimeMillis();
+            try {
+                byte[] jpegData = yuvToJpeg(latestFrame.yuvData, latestFrame.width, latestFrame.height);
+                Log.d("VoiceCall-MCP", "JPEG编码完成, size=" + (jpegData != null ? jpegData.length : 0) + ", 耗时=" + (System.currentTimeMillis() - t0) + "ms");
+                if (jpegData == null) {
+                    sendMcpError(mcpId, "图像编码失败");
+                    return;
+                }
+
+                RequestBody requestBody = new MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("question", question)
+                        .addFormDataPart("image", "frame.jpeg",
+                                RequestBody.create(jpegData, MediaType.parse("image/jpeg")))
+                        .build();
+
+                Request request = new Request.Builder()
+                        .url(visionUrl)
+                        .header("Authorization", "Bearer " + visionToken)
+                        .header("Device-Id", "c0:3e:ba:2e:d5:97")
+                        .header("Client-Id", "android_client")
+                        .post(requestBody)
+                        .build();
+
+                long t1 = System.currentTimeMillis();
+                Log.d("VoiceCall-MCP", "HTTP POST开始: " + visionUrl);
+                try (Response response = httpClient.newCall(request).execute()) {
+                    long t2 = System.currentTimeMillis();
+                    String body = response.body() != null ? response.body().string() : "";
+                    Log.d("VoiceCall-MCP", "视觉响应, 耗时=" + (t2 - t1) + "ms, code=" + response.code() + ", body=" + body);
+                    if (response.isSuccessful()) {
+                        JSONObject result = new JSONObject(body);
+                        String visionText = result.optString("response", result.toString());
+                        sendMcpResult(mcpId, visionText);
+                    } else {
+                        sendMcpError(mcpId, "视觉服务返回错误: " + response.code());
+                    }
+                }
+            } catch (Exception e) {
+                Log.e("VoiceCall-MCP", "视觉请求失败, 耗时=" + (System.currentTimeMillis() - t0) + "ms", e);
+                sendMcpError(mcpId, "视觉请求异常: " + e.getMessage());
+            } finally {
+                isMcpInProgress = false;
+                mainHandler.removeCallbacks(pingRunnable);
+                Log.d("VoiceCall-MCP", "sendVisionRequest结束, 总耗时=" + (System.currentTimeMillis() - t0) + "ms");
+            }
+        }).start();
+    }
+
+    private void sendMcpResult(int mcpId, String text) {
+        if (webSocketManager == null || !webSocketManager.isConnected()) return;
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("jsonrpc", "2.0");
+            payload.put("id", mcpId);
+            JSONObject result = new JSONObject();
+            result.put("content", new JSONArray()
+                    .put(new JSONObject().put("type", "text").put("text", text)));
+            payload.put("result", result);
+
+            JSONObject mcpMessage = new JSONObject();
+            mcpMessage.put("type", "mcp");
+            mcpMessage.put("payload", payload);
+            Log.d("VoiceCall-MCP", "发送MCP结果 id=" + mcpId + ": " + text);
+            webSocketManager.sendMessage(mcpMessage.toString());
+        } catch (Exception e) {
+            Log.e("VoiceCall-MCP", "发送MCP结果失败", e);
+        }
+    }
+
+    private void sendMcpJsonResult(int mcpId, JSONObject result) {
+        if (webSocketManager == null || !webSocketManager.isConnected()) return;
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("jsonrpc", "2.0");
+            payload.put("id", mcpId);
+            payload.put("result", result);
+
+            JSONObject mcpMessage = new JSONObject();
+            mcpMessage.put("type", "mcp");
+            mcpMessage.put("payload", payload);
+            webSocketManager.sendMessage(mcpMessage.toString());
+        } catch (Exception e) {
+            Log.e("VoiceCall-MCP", "发送MCP JSON结果失败", e);
+        }
+    }
+
+    private void sendMcpError(int mcpId, String errorMsg) {
+        if (webSocketManager == null || !webSocketManager.isConnected()) return;
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("jsonrpc", "2.0");
+            payload.put("id", mcpId);
+            JSONObject error = new JSONObject();
+            error.put("code", -1);
+            error.put("message", errorMsg);
+            payload.put("error", error);
+
+            JSONObject mcpMessage = new JSONObject();
+            mcpMessage.put("type", "mcp");
+            mcpMessage.put("payload", payload);
+            webSocketManager.sendMessage(mcpMessage.toString());
+        } catch (Exception e) {
+            Log.e("VoiceCall-MCP", "发送MCP错误失败", e);
+        }
+    }
+
+    private static class FrameCache {
+        private static final int CACHE_SIZE = 5;
+        private final FrameData[] frames;
+        private int writeIndex = 0;
+        private int count = 0;
+
+        private static class FrameData {
+            byte[] yuvData;
+            int width;
+            int height;
+            long timestamp;
+
+            FrameData(byte[] yuvData, int width, int height, long timestamp) {
+                this.yuvData = yuvData;
+                this.width = width;
+                this.height = height;
+                this.timestamp = timestamp;
+            }
+        }
+
+        FrameCache() {
+            frames = new FrameData[CACHE_SIZE];
+        }
+
+        synchronized void addFrame(byte[] yuvData, int width, int height) {
+            long timestamp = System.currentTimeMillis();
+
+            if (frames[writeIndex] == null) {
+                frames[writeIndex] = new FrameData(yuvData, width, height, timestamp);
+            } else {
+                frames[writeIndex].yuvData = yuvData;
+                frames[writeIndex].width = width;
+                frames[writeIndex].height = height;
+                frames[writeIndex].timestamp = timestamp;
+            }
+
+            writeIndex = (writeIndex + 1) % CACHE_SIZE;
+            count = Math.min(count + 1, CACHE_SIZE);
+        }
+
+        synchronized FrameData getLatestFrame() {
+            if (count == 0) return null;
+            int latestIndex = (writeIndex - 1 + CACHE_SIZE) % CACHE_SIZE;
+            return frames[latestIndex];
+        }
+
+        synchronized void clear() {
+            for (int i = 0; i < CACHE_SIZE; i++) {
+                frames[i] = null;
+            }
+            writeIndex = 0;
+            count = 0;
+        }
     }
 
     private static class SafeHandler extends Handler {
