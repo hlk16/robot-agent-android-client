@@ -47,6 +47,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.lhht.xiaozhi.R;
+import com.lhht.xiaozhi.utils.AudioRouteManager;
 import com.lhht.xiaozhi.settings.SettingsManager;
 import com.lhht.xiaozhi.views.WaveformView;
 import com.lhht.xiaozhi.websocket.WebSocketManager;
@@ -129,6 +130,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     
     // 音频焦点管理
     private AudioManager.OnAudioFocusChangeListener audioFocusChangeListener;
+
+    // 音频路由管理（通信模式 + 蓝牙耳机 SCO 通道）
+    private AudioRouteManager audioRouteManager;
     
     // 音频播放队列
     /*
@@ -292,9 +296,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         //摄像头分析
         cameraExecutor = Executors.newSingleThreadExecutor();//摄像头分析
 
-        // 设置音频会话模式为通信模式，有助于回声消除
-        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
-        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        // 初始化音频路由：切到通信模式，并在检测到蓝牙耳机时启用 SCO 通道。
+        // 不启用 SCO 的话，通信模式下的音频找不到蓝牙出口，会回落到本机扬声器。
+        audioRouteManager = new AudioRouteManager(this);
+        audioRouteManager.startForVoiceCall();
         
         // 初始化音频焦点监听器
         initAudioFocusListener();
@@ -610,10 +615,10 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         isSpeakerOn = !isSpeakerOn;
         speakerButton.setImageResource(isSpeakerOn ? R.drawable.ic_volume_up : R.drawable.ic_volume_off);
 
-        AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
-        audioManager.setSpeakerphoneOn(isSpeakerOn);
-        // 音频模式，使用通信模式并启用回声抑制
-        audioManager.setMode(AudioManager.MODE_IN_COMMUNICATION);
+        // 交给路由管理器处理：蓝牙 SCO 生效时会忽略此切换，避免把声音从耳机抢回扬声器
+        if (audioRouteManager != null) {
+            audioRouteManager.setSpeakerOn(isSpeakerOn);
+        }
     }
     private void stopRecording() {
         isRecording = false;
@@ -689,12 +694,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
             // 释放音频焦点
             abandonAudioFocus();
             
-            // 恢复默认音频模式
-            try {
-                AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
-                audioManager.setMode(AudioManager.MODE_NORMAL);
-            } catch (Exception e) {
-                Log.e("VoiceCall", "恢复音频模式失败", e);
+            // 恢复默认音频模式，并关闭蓝牙 SCO 通道
+            if (audioRouteManager != null) {
+                audioRouteManager.stop();
             }
             
             // 关闭线程池
@@ -1246,12 +1248,9 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         abandonAudioFocus();
         audioFocusChangeListener = null;
         
-        // 12. 恢复默认音频模式
-        try {
-            AudioManager audioManager = (AudioManager) getSystemService(AUDIO_SERVICE);
-            audioManager.setMode(AudioManager.MODE_NORMAL);
-        } catch (Exception e) {
-            Log.e("Voice", "恢复音频模式失败", e);
+        // 12. 恢复默认音频模式，并关闭蓝牙 SCO 通道（stop() 幂等，重复调用安全）
+        if (audioRouteManager != null) {
+            audioRouteManager.stop();
         }
         
         Log.d("Voice", "onDestroy 执行完成");
