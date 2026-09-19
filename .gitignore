@@ -22,6 +22,11 @@ build/
 # Local configuration file (sdk path, etc)
 local.properties
 
+# 本地密钥配置（腾讯地图 Key 等）
+# 真实密钥写在这里，由 secrets.properties.template 复制而来，禁止入库。
+# 注意：.template 结尾的模板文件需要入库，不受此规则影响。
+secrets.properties
+
 # Log Files
 *.log
 

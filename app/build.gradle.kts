@@ -1,6 +1,34 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
 }
+
+// ============================================================
+//  本地密钥配置
+//  ------------------------------------------------------------
+//  真实密钥存放在根目录的 secrets.properties（不入库）。
+//  首次使用请复制 secrets.properties.template 并按说明填写。
+//  未创建该文件时仍可编译，但密钥为空，相关功能在运行时不可用。
+// ============================================================
+val secretsFile = rootProject.file("secrets.properties")
+val secrets = Properties().apply {
+    if (secretsFile.exists()) {
+        secretsFile.inputStream().use { load(it) }
+    } else {
+        logger.warn(
+            "⚠️  未找到 secrets.properties，地图/POS 搜索等功能将不可用。\n" +
+            "   请执行：cp secrets.properties.template secrets.properties 并填入密钥。"
+        )
+    }
+}
+
+/** 读取密钥原文，缺失时返回空串，保证无配置也能编译通过。 */
+fun secret(key: String): String = secrets.getProperty(key, "").trim()
+
+/** 转义为 Java/Kotlin 字符串字面量，供 buildConfigField 使用。 */
+fun quoted(key: String): String =
+    "\"" + secret(key).replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 android {
     namespace = "com.lhht.xiaozhi"
@@ -14,7 +42,17 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        
+
+        // ---- 密钥注入（值来自本地 secrets.properties，不进源码）----
+        // 腾讯地图 WebService API Key：SearchNaviActivity 做 POI 搜索时使用
+        buildConfigField(
+            "String",
+            "TENCENT_MAP_WEBSERVICE_KEY",
+            quoted("tencent.map.webserviceKey")
+        )
+        // 腾讯地图 Android SDK Key：写入 AndroidManifest 的 TencentMapSDK meta-data
+        manifestPlaceholders["TENCENT_MAP_SDK_KEY"] = secret("tencent.map.sdkKey")
+
         // 为不同CPU架构编译native库
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
@@ -50,6 +88,7 @@ android {
     
     buildFeatures {
         viewBinding = true
+        buildConfig = true   // 生成 BuildConfig 类，用于注入 TENCENT_MAP_WEBSERVICE_KEY
     }
 
     packagingOptions {
@@ -98,7 +137,6 @@ dependencies {
     // JSON
     implementation("org.json:json:20231013")
     implementation("org.eclipse.paho:org.eclipse.paho.client.mqttv3:1.2.0")
-    implementation (files("libs/SparkChain.aar"))
     // 地图库
     implementation ("com.tencent.map:tencent-map-vector-sdk:4.5.5.1-lite")
     // 导航库

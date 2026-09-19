@@ -12,9 +12,6 @@ public class SettingsManager {
     private static final String KEY_TOKEN = "token";
     private static final String KEY_ENABLE_TOKEN = "enable_token";
     private static final String KEY_WS_URLS = "ws_urls";
-    private static final String KEY_APP_ID = "app_id";
-    private static final String KEY_API_KEY = "api_key";
-    private static final String KEY_API_SECRET = "api_secret";
 
     private final MMKV mmkv;
     // 初始化MMKV
@@ -33,11 +30,6 @@ public class SettingsManager {
         mmkv.encode(KEY_WS_URLS, jsonArray.toString());//序列化存储·
     }
 
-    public void saveApiSettings(String appId, String apiKey, String apiSecret) {
-        mmkv.encode(KEY_APP_ID, appId);
-        mmkv.encode(KEY_API_KEY, apiKey);
-        mmkv.encode(KEY_API_SECRET, apiSecret);
-    }
     //获取默认的ws_url
     public String getWsUrl() {
         return mmkv.decodeString(KEY_WS_URL, "wss://api.tenclass.net/xiaozhi/v1/");
@@ -66,17 +58,5 @@ public class SettingsManager {
         } catch (JSONException e) {
             return null;
         }
-    }
-
-    public String getAppId() {
-        return mmkv.decodeString(KEY_APP_ID, "");
-    }
-
-    public String getApiKey() {
-        return mmkv.decodeString(KEY_API_KEY, "");
-    }
-
-    public String getApiSecret() {
-        return mmkv.decodeString(KEY_API_SECRET, "");
     }
 }

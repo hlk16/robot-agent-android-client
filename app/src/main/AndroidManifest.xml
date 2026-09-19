@@ -48,9 +48,10 @@
         <activity
             android:name=".activities.ChatActivity"
             android:exported="false" />
+        <!-- 值由 app/build.gradle.kts 的 manifestPlaceholders 从 secrets.properties 注入 -->
         <meta-data
             android:name="TencentMapSDK"
-            android:value="XIZBZ-KKKLW-PFLRJ-YVMLV-3JANQ-XLF4U" />
+            android:value="${TENCENT_MAP_SDK_KEY}" />
 
 
         <activity

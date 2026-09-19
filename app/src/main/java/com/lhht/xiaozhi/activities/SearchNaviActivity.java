@@ -29,6 +29,7 @@ import androidx.core.view.WindowInsetsCompat;
 
 // 使用腾讯地图SDK内置的WebService API进行POI搜索
 // 注意：腾讯地图SDK中的POI搜索功能通过WebService API实现
+import com.lhht.xiaozhi.BuildConfig;
 import com.lhht.xiaozhi.R;
 import com.tencent.tencentmap.mapsdk.maps.CameraUpdate;
 import com.tencent.tencentmap.mapsdk.maps.CameraUpdateFactory;
@@ -62,8 +63,10 @@ public class SearchNaviActivity extends AppCompatActivity implements TencentMap.
     private static final String TAG = "SearchNaviActivity";
     private static final int LOCATION_PERMISSION_REQUEST_CODE = 1001;
 
-    // 腾讯地图API密钥 - 请替换为您的实际API密钥
-    private static final String TENCENT_MAP_API_KEY = "R2RBZ-JY5WT-T6LX6-LD4XP-RV3D2-RBFHS";
+    // 腾讯地图 WebService API 密钥
+    // 来源：根目录 secrets.properties -> app/build.gradle.kts -> BuildConfig
+    // 首次配置请参考 secrets.properties.template
+    private static final String TENCENT_MAP_API_KEY = BuildConfig.TENCENT_MAP_WEBSERVICE_KEY;
 
     // HTTP客户端
     private OkHttpClient httpClient;
