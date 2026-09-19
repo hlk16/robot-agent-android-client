@@ -104,6 +104,13 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     //Opus编码器的帧大小
     private static final int OPUS_FRAME_SIZE = 1440;
 
+    //波形每 50ms 刷新一次（20fps）已经足够顺滑。
+    //再快也画不出更多细节：视图宽约 800px，一帧 PCM 有 1440 个采样点，
+    //相邻点间距不到 1 像素，多出来的点只会挤在同一个像素列里白烧 CPU。
+    private static final long WAVEFORM_MIN_INTERVAL_MS = 50;
+    //AI 波形降采样后的点数，与人声波形保持一致
+    private static final int AI_WAVEFORM_POINTS = 100;
+
     private static final int MSG_INIT_AUDIO = 1;
     private static final int MSG_INIT_WEBSOCKET = 2;
 
@@ -172,7 +179,11 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
     // ⚠️ 注意：音频播放数据不能复用（会放入队列异步处理），波形显示数据可以复用
     private float[] waveformBuffer = new float[100];      // 用户波形显示
     private long lastWaveformUpdate = 0;
-    private float[] amplitudeBuffer = new float[OPUS_FRAME_SIZE];  // AI波形显示
+    // AI 波形显示。双缓冲轮换：降采样结果要 post 到主线程去画，
+    // 单缓冲的话主线程还没画完就被下一帧覆写，波形会随机跳变
+    private final float[][] aiWaveformBuffers = new float[2][AI_WAVEFORM_POINTS];
+    private int aiWaveformBufferIndex = 0;
+    private long lastAiWaveformUpdate = 0;
     
     // 回声消除和噪声抑制硬件AEC
     private AcousticEchoCanceler echoCanceler;
@@ -806,11 +817,55 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         mainHandler.post(() -> userWaveformView.setAmplitudes(waveformBuffer));
     }
 
-    //更新AI声音波形
-    public void updateAiWaveform(float[] amplitudes) {
+    /**
+     * 更新 AI 声音波形。
+     *
+     * 这个方法跑在音频解码线程上，所以「降频」和「降采样」都在这里做完，
+     * 主线程只会收到一个 100 点的小数组。
+     * 原实现是把 1440 个采样点原样 post 给主线程、每个音频帧都重画一次 ——
+     * onDraw 里要为此拼一条 1440 段、带抗锯齿描边的 Path，
+     * Path 内容每帧都变，HWUI 就得每帧重新三角化一遍，主线程直接被拖垮。
+     *
+     * @param samples Opus 解码出来的 PCM 采样
+     * @param count   本次真正有效的采样数（decodedBuffer 是复用缓冲区，尾部是上一帧的残留）
+     */
+    private void updateAiWaveform(short[] samples, int count) {
+        long now = System.currentTimeMillis();
+        if (now - lastAiWaveformUpdate < WAVEFORM_MIN_INTERVAL_MS) return;
+        lastAiWaveformUpdate = now;
+
+        // 峰值降采样：每个区间取绝对值最大的那个采样（保留符号）。
+        // 不用「每隔 N 个取一个」，那样尖峰会被整段跳过，波形看起来一跳一跳的。
+        int points = Math.min(AI_WAVEFORM_POINTS, count);
+        if (points < 2) return;
+        int bucket = Math.max(1, count / points);
+
+        aiWaveformBufferIndex ^= 1;
+        float[] out = aiWaveformBuffers[aiWaveformBufferIndex];
+        for (int i = 0; i < points; i++) {
+            int start = i * bucket;
+            int end = Math.min(start + bucket, count);
+            float peak = 0f;
+            for (int j = start; j < end; j++) {
+                float v = samples[j] / 32768f;
+                if (Math.abs(v) > Math.abs(peak)) peak = v;
+            }
+            out[i] = peak;
+        }
+        final int outCount = points;
+
         mainHandler.post(() -> {
             if (aiWaveformView != null) {
-                aiWaveformView.setAmplitudes(amplitudes);
+                aiWaveformView.setAmplitudes(out, outCount);
+            }
+        });
+    }
+
+    //清空 AI 声音波形
+    private void clearAiWaveform() {
+        mainHandler.post(() -> {
+            if (aiWaveformView != null) {
+                aiWaveformView.setAmplitudes(null, 0);
             }
         });
     }
@@ -940,7 +995,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                     audioTrack.flush();
                     isPlaying = false;
                     // 清空波形显示
-                    updateAiWaveform(new float[0]);
+                    clearAiWaveform();
                 }
             } catch (Exception e) {
                 Log.e("VoiceCall", "停止音频播放失败", e);
@@ -1133,13 +1188,7 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
                         }
                     }
                     //更新AI波形图
-                    float[] amplitudes = amplitudeBuffer.length >= decodedSamples 
-                        ? amplitudeBuffer 
-                        : new float[decodedSamples];
-                    for (int i = 0; i < decodedSamples; i++) {
-                        amplitudes[i] = decodedBuffer[i] / 32768f;
-                    }
-                    updateAiWaveform(amplitudes);
+                    updateAiWaveform(decodedBuffer, decodedSamples);
                 }
             } catch (Exception e) {
                 Log.e("VoiceCall", "处理音频数据失败", e);

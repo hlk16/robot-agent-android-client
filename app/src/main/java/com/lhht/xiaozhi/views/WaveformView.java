@@ -10,6 +10,8 @@ import android.view.View;
 
 public class WaveformView extends View {
     private float[] amplitudes;
+    /** 有效点数。amplitudes 通常是复用缓冲区，尾部可能残留上一帧数据，不能按 length 画 */
+    private int amplitudeCount;
     private Paint paint;
     private Path path;
 
@@ -39,7 +41,16 @@ public class WaveformView extends View {
     }
 
     public void setAmplitudes(float[] amplitudes) {
+        setAmplitudes(amplitudes, amplitudes == null ? 0 : amplitudes.length);
+    }
+
+    /**
+     * @param count 本次真正有效的点数。调用方传进来的往往是复用缓冲区，
+     *              尾部还是上一帧的旧数据，按 length 画会多描一大段残影。
+     */
+    public void setAmplitudes(float[] amplitudes, int count) {
         this.amplitudes = amplitudes;
+        this.amplitudeCount = amplitudes == null ? 0 : Math.min(count, amplitudes.length);
         invalidate();
     }
 
@@ -47,7 +58,10 @@ public class WaveformView extends View {
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
 
-        if (amplitudes == null || amplitudes.length == 0) {
+        float[] data = amplitudes;
+        int count = amplitudeCount;
+        // 少于两个点连不成线；且 count - 1 会让下面的 stepX 除零
+        if (data == null || count < 2) {
             return;
         }
 
@@ -57,13 +71,13 @@ public class WaveformView extends View {
         float maxAmplitude = 0.5f; // 最大振幅为视图高度的一半
 
         path.reset();
-        float stepX = width / (amplitudes.length - 1);
+        float stepX = width / (count - 1);
 
         // 绘制波形
         path.moveTo(0, centerY);
-        for (int i = 0; i < amplitudes.length; i++) {
+        for (int i = 0; i < count; i++) {
             float x = i * stepX;
-            float y = centerY + (amplitudes[i] * height * maxAmplitude);
+            float y = centerY + (data[i] * height * maxAmplitude);
             path.lineTo(x, y);
         }
 
