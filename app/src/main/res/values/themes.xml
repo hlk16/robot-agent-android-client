@@ -1,27 +1,63 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources xmlns:tools="http://schemas.android.com/tools">
-    <!-- Base application theme. -->
-    <style name="Theme.XiaoZhi" parent="Theme.MaterialComponents.Light.NoActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">#03A9F4</item>
-        <item name="colorPrimaryDark">#0288D1</item>
-        <item name="colorAccent">#03A9F4</item>
-        <!-- Status bar color. -->
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:windowLightStatusBar">true</item>
-        <!-- Button style -->
-        <item name="android:buttonStyle">@style/CustomButton</item>
-        <!-- Secondary brand color. -->
+
+    <!-- ================================================================
+         基础主题
+         ================================================================
+         父主题用 DayNight：日间自动解析为 Light 变体，夜间解析为 Dark 变体，
+         因此**只需要这一份定义**，不再需要 values-night/themes.xml。
+
+         颜色一律引用语义色（@color/surface、@color/text_primary 等），
+         它们的日/夜差异在 values/colors.xml 与 values-night/colors.xml 中维护。
+
+         ⚠️ 需要区分日夜的「非颜色」属性（如 windowLightStatusBar 这种布尔值），
+            请抽成 @bool 资源（见 values/bools.xml），
+            不要靠复制一份 values-night/themes.xml 来做 ——
+            样式资源按配置整体覆盖而非逐项合并，很容易漏项导致两套主题不一致。
+         ================================================================ -->
+    <style name="Theme.XiaoZhi" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- 品牌色：不随模式变化 -->
+        <item name="colorPrimary">@color/brand_primary</item>
+        <item name="colorPrimaryVariant">@color/brand_primary_dark</item>
+        <item name="colorPrimaryDark">@color/brand_primary_dark</item>
+        <item name="colorAccent">@color/brand_primary</item>
+
+        <!-- 次要品牌色：teal_200 是浅色，所以上面的文字固定用黑色 -->
         <item name="colorSecondary">@color/teal_200</item>
+        <item name="colorSecondaryVariant">@color/teal_700</item>
         <item name="colorSecondaryContainer">@color/teal_700</item>
         <item name="colorOnSecondary">@color/black</item>
         <item name="colorOnSecondaryContainer">@color/black</item>
-        <!-- Surface colors -->
-        <item name="colorSurface">@color/white</item>
-        <item name="colorOnSurface">@color/black</item>
-        <item name="colorSurfaceVariant">@color/white</item>
-        <item name="colorOnSurfaceVariant">@color/black</item>
-        <!-- Material Design styles -->
+
+        <!-- 表面与文字：随模式变化的核心 -->
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorSurfaceVariant">@color/surface_alt</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <!-- 注意：colorBackground / colorOnBackground 属 Material 3 属性，
+             本主题基于 Material 2，此处使用框架属性 android:colorBackground 代替 -->
+        <item name="android:colorBackground">@color/surface</item>
+        <item name="colorError">@color/error</item>
+        <item name="colorOnError">@color/text_on_brand</item>
+
+        <item name="android:windowBackground">@color/surface</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColorHint">@color/text_hint</item>
+
+        <!-- 状态栏：透明，图标颜色跟随模式 -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">@bool/window_light_status_bar</item>
+
+        <!-- 导航栏：底色跟随表面色，图标颜色跟随模式。
+             原先未配置，浅色界面下会残留一条纯黑导航栏。 -->
+        <item name="android:navigationBarColor">@color/surface</item>
+        <item name="android:windowLightNavigationBar">@bool/window_light_nav_bar</item>
+
+        <!-- 按钮样式 -->
+        <item name="android:buttonStyle">@style/CustomButton</item>
+
+        <!-- Material Design 控件样式 -->
         <item name="materialButtonStyle">@style/Widget.MaterialComponents.Button</item>
         <item name="textInputStyle">@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox</item>
         <item name="materialCardViewStyle">@style/Widget.MaterialComponents.CardView</item>
@@ -29,20 +65,39 @@
         <item name="floatingActionButtonStyle">@style/Widget.MaterialComponents.FloatingActionButton</item>
     </style>
 
-    <!-- Settings activity theme -->
-    <style name="Theme.XiaoZhi.Settings" parent="Theme.MaterialComponents.Light.NoActionBar">
-        <!-- Primary brand color. -->
-        <item name="colorPrimary">#03A9F4</item>
-        <item name="colorPrimaryDark">#0288D1</item>
-        <item name="colorAccent">#03A9F4</item>
-        <!-- Status bar color. -->
+    <!-- ================================================================
+         设置页主题
+         ================================================================
+         状态栏底色用品牌蓝，上面固定配白色图标，因此
+         windowLightStatusBar 恒为 false，不需要按模式区分。
+         ================================================================ -->
+    <style name="Theme.XiaoZhi.Settings" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/brand_primary</item>
+        <item name="colorPrimaryVariant">@color/brand_primary_dark</item>
+        <item name="colorPrimaryDark">@color/brand_primary_dark</item>
+        <item name="colorAccent">@color/brand_primary</item>
+
+        <item name="colorSurface">@color/surface</item>
+        <item name="colorOnSurface">@color/text_primary</item>
+        <item name="colorSurfaceVariant">@color/surface_alt</item>
+        <item name="colorOnSurfaceVariant">@color/text_secondary</item>
+        <!-- 注意：colorBackground / colorOnBackground 属 Material 3 属性，
+             本主题基于 Material 2，此处使用框架属性 android:colorBackground 代替 -->
+        <item name="android:colorBackground">@color/surface</item>
+
+        <item name="android:windowBackground">@color/surface</item>
+        <item name="android:textColorPrimary">@color/text_primary</item>
+        <item name="android:textColorSecondary">@color/text_secondary</item>
+        <item name="android:textColorHint">@color/text_hint</item>
+
+        <!-- 状态栏底色是品牌蓝，图标固定用白色 -->
         <item name="android:statusBarColor">?attr/colorPrimary</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:windowLightNavigationBar">@bool/window_light_nav_bar</item>
         <item name="android:enforceNavigationBarContrast" tools:targetApi="q">false</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <!-- Material Design styles -->
+
         <item name="materialButtonStyle">@style/Widget.MaterialComponents.Button</item>
         <item name="textInputStyle">@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox</item>
         <item name="materialCardViewStyle">@style/Widget.MaterialComponents.CardView</item>

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"d:/android_app/xiaozhi-android-client\" && echo \"=== 检查所有 @color/ 引用是否都有定义 ===\" && grep -rho '@color/[a-z_0-9A-Z]*' app/src/main/res/ app/src/main/java/ 2>/dev/null | sed 's|@color/||' | sort -u > /tmp/used.txt && grep -o 'name=\"[a-z_0-9A-Z]*\"' app/src/main/res/values/colors.xml | sed 's|name=\"||;s|\"||' | sort -u > /tmp/defined.txt && echo \"引用了但【未定义】的颜色（会编译失败）：\" && comm -23 /tmp/used.txt /tmp/defined.txt && echo \"--- end ---\" && echo \"\" && echo \"=== 检查 @bool/ 引用 ===\" && grep -rho '@bool/[a-z_0-9A-Z]*' app/src/main/res/ | sed 's|@bool/||' | sort -u && echo \"--- 已定义 ---\" && grep -o 'name=\"[a-z_0-9]*\"' app/src/main/res/values/bools.xml | sed 's|name=\"||;s|\"||' | sort -u)",
+      "Read(//tmp/**)",
+      "Bash(git diff *)"
+    ]
+  }
+}

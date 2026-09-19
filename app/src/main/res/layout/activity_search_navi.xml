@@ -15,7 +15,7 @@
         android:layout_height="wrap_content"
         android:orientation="vertical"
         android:padding="16dp"
-        android:background="#F5F5F5"
+        android:background="@color/surface_alt"
         android:elevation="4dp">
 
         <!-- 搜索方式选择 -->
@@ -31,7 +31,7 @@
                 android:layout_height="wrap_content"
                 android:text="搜索方式："
                 android:textSize="14sp"
-                android:textColor="#333333" />
+                android:textColor="@color/text_primary" />
 
             <Spinner
                 android:id="@+id/sp_search_method"
@@ -56,7 +56,7 @@
                 android:layout_height="wrap_content"
                 android:text="城市："
                 android:textSize="14sp"
-                android:textColor="#333333" />
+                android:textColor="@color/text_primary" />
 
             <EditText
                 android:id="@+id/et_city"
@@ -84,7 +84,7 @@
                 android:layout_height="wrap_content"
                 android:text="关键词："
                 android:textSize="14sp"
-                android:textColor="#333333" />
+                android:textColor="@color/text_primary" />
 
             <EditText
                 android:id="@+id/et_search_keyword"
@@ -115,7 +115,7 @@
                 android:text="搜索地点"
                 android:textSize="14sp"
                 android:background="@drawable/bg_nav_button_primary"
-                android:textColor="#FFFFFF" />
+                android:textColor="@color/text_on_brand" />
 
             <Button
                 android:id="@+id/btn_clear_search"
@@ -126,7 +126,7 @@
                 android:text="清除数据"
                 android:textSize="14sp"
                 android:background="@drawable/bg_nav_button_primary"
-                android:textColor="#666666" />
+                android:textColor="@color/text_on_brand" />
 
         </LinearLayout>
 
@@ -138,7 +138,7 @@
             android:layout_marginTop="8dp"
             android:text="请输入搜索条件"
             android:textSize="12sp"
-            android:textColor="#666666"
+            android:textColor="@color/text_secondary"
             android:gravity="center" />
 
     </LinearLayout>
@@ -172,7 +172,7 @@
                 android:textSize="14sp"
                 android:paddingHorizontal="16dp"
                 android:background="@drawable/bg_nav_button_primary"
-                android:textColor="#FFFFFF"
+                android:textColor="@color/text_on_brand"
                 android:visibility="gone" />
 
             <Button
@@ -183,7 +183,7 @@
                 android:textSize="14sp"
                 android:paddingHorizontal="16dp"
                 android:background="@drawable/bg_nav_button_primary"
-                android:textColor="#666666" />
+                android:textColor="@color/text_on_brand" />
 
         </LinearLayout>
 

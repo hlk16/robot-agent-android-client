@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 夜间：系统栏是深色，图标要用浅色，所以这里是 false -->
+    <bool name="window_light_status_bar">false</bool>
+    <bool name="window_light_nav_bar">false</bool>
+</resources>

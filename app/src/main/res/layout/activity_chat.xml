@@ -18,7 +18,7 @@
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="8dp"
-            android:backgroundTint="@android:color/white">
+            android:backgroundTint="@color/surface">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -40,7 +40,7 @@
                         android:text="🔗 连接设置"
                         android:textSize="18sp"
                         android:textStyle="bold"
-                        android:textColor="#333333" />
+                        android:textColor="@color/text_primary" />
 
                     <View
                         android:id="@+id/statusIndicator"
@@ -54,7 +54,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="📡 未连接"
-                        android:textColor="#666666"
+                        android:textColor="@color/text_secondary"
                         android:textSize="14sp"
                         android:textStyle="bold" />
 
@@ -140,7 +140,7 @@
                             android:text="👥 在线用户"
                             android:textSize="16sp"
                             android:textStyle="bold"
-                            android:textColor="#333333" />
+                            android:textColor="@color/text_primary" />
 
                         <com.google.android.material.button.MaterialButton
                             android:id="@+id/btnGetUsers"
@@ -163,7 +163,7 @@
                         android:layout_width="match_parent"
                         android:layout_height="wrap_content"
                         android:text="暂无在线用户"
-                        android:textColor="#666666"
+                        android:textColor="@color/text_secondary"
                         android:textSize="14sp"
                         android:background="@drawable/rounded_background"
                         android:padding="12dp" />
@@ -194,7 +194,7 @@
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="4dp"
-            android:backgroundTint="@android:color/white">
+            android:backgroundTint="@color/surface">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -216,7 +216,7 @@
                         android:text="💬 聊天消息"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="#333333" />
+                        android:textColor="@color/text_primary" />
 
                     <com.google.android.material.button.MaterialButton
                         android:id="@+id/btnClear"
@@ -252,7 +252,7 @@
                         android:background="@drawable/rounded_background"
                         android:padding="12dp"
                         android:textSize="14sp"
-                        android:textColor="#666666"
+                        android:textColor="@color/text_secondary"
                         android:lineSpacingExtra="4dp" />
 
                 </ScrollView>
@@ -268,7 +268,7 @@
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="4dp"
-            android:backgroundTint="@android:color/white">
+            android:backgroundTint="@color/surface">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -284,7 +284,7 @@
                     android:text="📹 视频通话(进入房间才可打开摄像头)"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:textColor="#333333"
+                    android:textColor="@color/text_primary"
                     android:layout_marginBottom="12dp" />
 
                 <!-- 本地视频预览窗口 -->
@@ -299,7 +299,7 @@
                         android:layout_height="wrap_content"
                         android:text="本地视频"
                         android:textSize="12sp"
-                        android:textColor="#666666"
+                        android:textColor="@color/text_secondary"
                         android:layout_marginBottom="4dp" />
 
                     <androidx.constraintlayout.widget.ConstraintLayout
@@ -341,7 +341,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="等待本地摄像头连接..."
-                                    android:textColor="#999999"
+                                    android:textColor="@color/text_tertiary"
                                     android:textSize="14sp" />
 
                             </LinearLayout>
@@ -364,7 +364,7 @@
                         android:layout_height="wrap_content"
                         android:text="远程视频"
                         android:textSize="12sp"
-                        android:textColor="#666666"
+                        android:textColor="@color/text_secondary"
                         android:layout_marginBottom="4dp" />
 
                     <androidx.constraintlayout.widget.ConstraintLayout
@@ -406,7 +406,7 @@
                                     android:layout_width="wrap_content"
                                     android:layout_height="wrap_content"
                                     android:text="等待远程视频连接..."
-                                    android:textColor="#999999"
+                                    android:textColor="@color/text_tertiary"
                                     android:textSize="14sp" />
 
                             </LinearLayout>
@@ -527,7 +527,7 @@
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="4dp"
-            android:backgroundTint="@android:color/white">
+            android:backgroundTint="@color/surface">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -541,7 +541,7 @@
                     android:text="🎮 快捷控制"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:textColor="#333333"
+                    android:textColor="@color/text_primary"
                     android:layout_marginBottom="12dp" />
 
 
@@ -677,7 +677,7 @@
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="4dp"
-            android:backgroundTint="@android:color/white">
+            android:backgroundTint="@color/surface">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -691,7 +691,7 @@
                     android:text="✉️ 发送消息"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:textColor="#333333"
+                    android:textColor="@color/text_primary"
                     android:layout_marginBottom="12dp" />
 
                 <LinearLayout
@@ -743,7 +743,7 @@
             android:layout_marginTop="16dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="4dp"
-            android:backgroundTint="@android:color/white">
+            android:backgroundTint="@color/surface">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -757,7 +757,7 @@
                     android:text="🧭 导航信息"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:textColor="#333333"
+                    android:textColor="@color/text_primary"
                     android:layout_marginBottom="12dp" />
 
                 <!-- 导航信息显示框 -->
@@ -782,7 +782,7 @@
                             android:layout_weight="1"
                             android:text="📍 目的地距离:"
                             android:textSize="14sp"
-                            android:textColor="#666666" />
+                            android:textColor="@color/text_secondary" />
 
                         <TextView
                             android:id="@+id/tvDestinationDistance"
@@ -811,7 +811,7 @@
                             android:layout_weight="1"
                             android:text="🧭 当前方向:"
                             android:textSize="14sp"
-                            android:textColor="#666666" />
+                            android:textColor="@color/text_secondary" />
 
                         <TextView
                             android:id="@+id/tvCurrentDirection"
@@ -839,7 +839,7 @@
                             android:layout_weight="1"
                             android:text="↪️ 下一转向距离:"
                             android:textSize="14sp"
-                            android:textColor="#666666" />
+                            android:textColor="@color/text_secondary" />
 
                         <TextView
                             android:id="@+id/tvNextTurnDistance"
@@ -866,7 +866,7 @@
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="4dp"
-            android:backgroundTint="@android:color/white">
+            android:backgroundTint="@color/surface">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -888,7 +888,7 @@
                         android:text="📷 图像检测信息"
                         android:textSize="16sp"
                         android:textStyle="bold"
-                        android:textColor="#333333" />
+                        android:textColor="@color/text_primary" />
 
                     <Switch
                         android:id="@+id/switchImageDetection"
@@ -923,7 +923,7 @@
                             android:layout_weight="1"
                             android:text="🎯 距离右侧车道线距离"
                             android:textSize="14sp"
-                            android:textColor="#666666" />
+                            android:textColor="@color/text_secondary" />
 
                         <TextView
                             android:id="@+id/tvDetectionStatus"
@@ -951,7 +951,7 @@
                             android:layout_weight="1"
                             android:text="📊 道路检查:"
                             android:textSize="14sp"
-                            android:textColor="#666666" />
+                            android:textColor="@color/text_secondary" />
 
                         <TextView
                             android:id="@+id/tvDetectionData"
@@ -980,7 +980,7 @@
             android:layout_marginBottom="16dp"
             app:cardCornerRadius="12dp"
             app:cardElevation="4dp"
-            android:backgroundTint="@android:color/white">
+            android:backgroundTint="@color/surface">
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -994,7 +994,7 @@
                     android:text="⚙️ 服务器配置"
                     android:textSize="16sp"
                     android:textStyle="bold"
-                    android:textColor="#333333"
+                    android:textColor="@color/text_primary"
                     android:layout_marginBottom="12dp" />
 
                 <!-- 聊天服务器地址 -->
