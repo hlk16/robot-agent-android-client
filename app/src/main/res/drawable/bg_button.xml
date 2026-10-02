@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<ripple xmlns:android="http://schemas.android.com/apk/res/android"
-    android:color="?android:attr/colorControlHighlight">
-    <item>
+<!-- CustomButton 的背景。
+     原来是单独一份 ripple，没有状态分支 —— setEnabled(false) 只拦住了点击，
+     外观一点没变，用户看到的就是"这个按钮点了没反应"。
+     BluetoothActivity / NBIOTActivity 的按钮都踩在这上面。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- 禁用态：置灰，并且不给水波纹反馈（禁用了还弹波纹是误导） -->
+    <item android:state_enabled="false">
         <shape android:shape="rectangle">
-            <solid android:color="#03A9F4" />
+            <solid android:color="@color/button_disabled_bg" />
             <corners android:radius="8dp" />
         </shape>
     </item>
-</ripple> 
+    <item android:drawable="@drawable/bg_button_primary" />
+</selector>

@@ -30,6 +30,11 @@
     <color name="divider_strong">#FF4A4A4A</color>
     <color name="line_gray">#FF3F3F3F</color>
 
+    <!-- 控件状态：深底上禁用态要比页面底色亮一点，
+         否则整块糊在背景里，看不出这里本来是个按钮 -->
+    <color name="button_disabled_bg">#FF2A2A2A</color>
+    <color name="text_disabled">#FF6A6A6A</color>
+
     <!-- 兼容旧名称 -->
     <color name="text_color">#FFECECEC</color>
     <color name="text_color_gray">#FF8A8A8A</color>

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- CustomButton 的文字色。
+     禁用时必须一起变暗：白字压在浅灰底上，比可用状态还扎眼，
+     反而会被当成"可以点"。 -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_enabled="false" android:color="@color/text_disabled" />
+    <item android:color="@color/text_on_brand" />
+</selector>

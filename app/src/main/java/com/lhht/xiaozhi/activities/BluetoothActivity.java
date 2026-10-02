@@ -37,6 +37,9 @@ public class BluetoothActivity extends AppCompatActivity {
     private static final String TAG = "BluetoothActivity";
 
     private ListView btList;
+    /** 「进入小车系统」/「进入远程控制」—— 蓝牙没连上时这两个按钮禁用 */
+    private Button btnEnterCarSystem;
+    private Button btnGoToChat;
     private ArrayList<BluetoothDevice> readyDevices = new ArrayList<>();
     private ArrayAdapter<String> btNames;
 
@@ -52,6 +55,9 @@ public class BluetoothActivity extends AppCompatActivity {
             btService = binder.getService();
             serviceBound = true;
             Log.d(TAG, "蓝牙服务已绑定");
+            // 服务是共享的，绑定时可能早就连上设备了（比如从别的页面返回），
+            // 所以要立刻对一次状态，不能等用户再点一次连接
+            refreshButtonState();
         }
 
         @Override
@@ -59,6 +65,7 @@ public class BluetoothActivity extends AppCompatActivity {
             serviceBound = false;
             btService = null;
             Log.d(TAG, "蓝牙服务已断开");
+            refreshButtonState();
         }
     };
 
@@ -78,6 +85,16 @@ public class BluetoothActivity extends AppCompatActivity {
 
         // 加载已配对设备
         loadPairedDevices();
+
+        // 初始一律禁用，等 onServiceConnected / 连接成功后再放开
+        refreshButtonState();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 离开这段时间连接可能掉了（小车断电等），回来重新对一次状态
+        refreshButtonState();
     }
 
     /**
@@ -93,8 +110,8 @@ public class BluetoothActivity extends AppCompatActivity {
      */
     private void initViews() {
         btList = findViewById(R.id.btList);
-        Button back = findViewById(R.id.back);
-        Button btnGoToChat = findViewById(R.id.btnGoToChat);
+        btnEnterCarSystem = findViewById(R.id.back);
+        btnGoToChat = findViewById(R.id.btnGoToChat);
 
         // 设备列表适配器
         btNames = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, new ArrayList<>());
@@ -112,10 +129,26 @@ public class BluetoothActivity extends AppCompatActivity {
         });
 
         // 跳转到语音通话页面
-        back.setOnClickListener(v -> navigateTo(VoiceCallActivity.class));
+        btnEnterCarSystem.setOnClickListener(v -> navigateTo(VoiceCallActivity.class));
 
         // 跳转到聊天页面
         btnGoToChat.setOnClickListener(v -> navigateTo(ChatActivity.class));
+    }
+
+    /**
+     * 按蓝牙连接状态刷新两个跳转按钮的可点击性。
+     *
+     * <p>没连上时 {@link #navigateTo} 本来也会拦下来，但按钮外观和可用时一模一样，
+     * 用户点了只会觉得"没反应"。现在直接置灰，一眼就知道得先连设备。
+     */
+    private void refreshButtonState() {
+        boolean connected = serviceBound && btService != null && btService.isConnected();
+        if (btnEnterCarSystem != null) {
+            btnEnterCarSystem.setEnabled(connected);
+        }
+        if (btnGoToChat != null) {
+            btnGoToChat.setEnabled(connected);
+        }
     }
 
     /**
@@ -146,6 +179,7 @@ public class BluetoothActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Toast.makeText(BluetoothActivity.this,
                             "连接成功: " + finalDeviceName, Toast.LENGTH_SHORT).show();
+                    refreshButtonState();
                 });
             }
 
@@ -154,6 +188,7 @@ public class BluetoothActivity extends AppCompatActivity {
                 runOnUiThread(() -> {
                     Toast.makeText(BluetoothActivity.this,
                             "连接失败: " + error, Toast.LENGTH_SHORT).show();
+                    refreshButtonState();
                 });
             }
         });

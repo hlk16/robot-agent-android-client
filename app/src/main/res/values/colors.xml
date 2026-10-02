@@ -66,6 +66,10 @@
     <color name="divider_strong">#FFCCCCCC</color>
     <color name="line_gray">#FFC7C7C7</color>
 
+    <!-- 控件状态：按钮 setEnabled(false) 时的外观 -->
+    <color name="button_disabled_bg">#FFDDDDDD</color>
+    <color name="text_disabled">#FF9E9E9E</color>
+
     <!-- 兼容旧名称（保持向后引用不报错，值指向语义色） -->
     <color name="text_color">#FF1A1A1A</color>
     <color name="text_color_gray">#FFB4B4B4</color>
