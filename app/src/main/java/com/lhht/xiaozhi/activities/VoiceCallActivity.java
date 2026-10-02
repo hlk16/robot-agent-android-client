@@ -11,7 +11,6 @@ import android.media.AudioTrack;
 import android.media.MediaRecorder;
 import android.media.audiofx.AcousticEchoCanceler;
 import android.media.audiofx.NoiseSuppressor;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -24,7 +23,6 @@ import android.view.View;
 import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.VideoView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
@@ -79,7 +77,6 @@ import okhttp3.Response;
 
 public class VoiceCallActivity extends AppCompatActivity implements WebSocketManager.WebSocketListener {
     private static final int CAMERA_PERMISSION_REQUEST_CODE = 100;
-    private VideoView videoView;
     //音频录制参数
     private static final int SAMPLE_RATE = 16000;
     private static final int CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO;
@@ -100,7 +97,6 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private TextView aiMessageText;
     private TextView recognizedText;
     private TextView callStatusText;
-    private TextView emojiText;
     //很可能是一个自定义的类，用于表示波形视图。这个类可能继承自Android中的View类或其他视图类，用于在界面上绘制波形数据
     private WaveformView aiWaveformView;
     private WaveformView userWaveformView;
@@ -229,21 +225,12 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
 
         bindService(new Intent(this, BluetoothService.class), btConnection, Context.BIND_AUTO_CREATE);
 
-        // 初始化视频播放
-        Uri videoUri = Uri.parse("android.resource://" + getPackageName() + "/" + R.raw.new_action);
-        videoView.setVideoURI(videoUri);
-        videoView.setOnPreparedListener(mp -> {
-            mp.setLooping(true);
-            mp.start();
-        });
     }
 
     private void initViews() {
-        videoView = findViewById(R.id.videoBackground);
         aiMessageText = findViewById(R.id.aiMessageText);
         recognizedText = findViewById(R.id.recognizedText);
         callStatusText = findViewById(R.id.callStatusText);
-        emojiText = findViewById(R.id.emojiText);
         aiWaveformView = findViewById(R.id.aiWaveformView);
         userWaveformView = findViewById(R.id.userWaveformView);
         muteButton = findViewById(R.id.muteButton);
@@ -896,7 +883,8 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 case "sentence_start":
                     String text = message.getString("text");
                     String[] parts = extractEmojiAndText(text);
-                    String emoji = parts[0];
+                    // parts[0] 是 emoji，暂时丢弃 —— Phase 2 会把它接到 EyeView 上驱动表情。
+                    // 拆分这一步不能省：不拆的话 emoji 会跟着正文一起显示到 aiMessageText 里。
                     String cleanText = parts[1];
 
                     if (speechStartTime > 0) {
@@ -928,23 +916,16 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                         order = 'h';
                     }
 
-                    if (!emoji.isEmpty()) {
-                        showEmoji(emoji);
-                    } else {
-                        hideEmoji();
-                    }
                     updateCallStatus("AI正在说话...");
                     break;
 
                 case "end":
                     updateCallStatus("正在通话中...");
-                    hideEmoji();
                     break;
 
                 case "error":
                     String error = message.optString("error", "未知错误");
                     updateCallStatus("TTS错误: " + error);
-                    hideEmoji();
                     break;
             }
         } catch (Exception e) {
@@ -996,23 +977,6 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         }
 
         return new String[]{emoji.toString(), cleanText.toString().trim()};
-    }
-
-    private void showEmoji(String emoji) {
-        mainHandler.post(() -> {
-            if (emojiText != null) {
-                emojiText.setText(emoji);
-                emojiText.setVisibility(View.VISIBLE);
-            }
-        });
-    }
-
-    private void hideEmoji() {
-        mainHandler.post(() -> {
-            if (emojiText != null) {
-                emojiText.setVisibility(View.GONE);
-            }
-        });
     }
 
     @Override
@@ -1279,9 +1243,6 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     @Override
     protected void onPause() {
         super.onPause();
-        if (videoView != null && videoView.isPlaying()) {
-            videoView.pause();
-        }
         stopCameraPreview();
         isPreviewStarted = false;
         if (frontCameraPreview != null) {
@@ -1289,30 +1250,6 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         }
         if (previewButton != null) {
             previewButton.setImageResource(R.drawable.baseline_videocam_24);
-        }
-    }
-
-    @Override
-    protected void onResume() {
-        super.onResume();
-        if (videoView != null && !videoView.isPlaying()) {
-            videoView.start();
-        }
-    }
-
-    @Override
-    protected void onSaveInstanceState(@NonNull Bundle outState) {
-        super.onSaveInstanceState(outState);
-        if (videoView != null) {
-            outState.putInt("VIDEO_POSITION", videoView.getCurrentPosition());
-        }
-    }
-
-    @Override
-    protected void onRestoreInstanceState(@NonNull Bundle savedInstanceState) {
-        super.onRestoreInstanceState(savedInstanceState);
-        if (videoView != null) {
-            videoView.seekTo(savedInstanceState.getInt("VIDEO_POSITION", 0));
         }
     }
 

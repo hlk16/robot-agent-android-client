@@ -6,17 +6,6 @@
     android:background="@color/black"
     android:fitsSystemWindows="false">
 
-    <!-- 视频播放层 -->
-    <VideoView
-        android:id="@+id/videoBackground"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="visible"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
     <!-- 通话状态文本 -->
     <TextView
         android:id="@+id/callStatusText"
@@ -29,14 +18,12 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Emoji显示 -->
-    <TextView
-        android:id="@+id/emojiText"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:textSize="200sp"
-        android:textColor="@color/white"
-        android:visibility="gone"
+    <!-- 表情眼睛（Nomi 风格），已替代原来的 emojiText。
+         尺寸交给布局显式指定，方便在 AS 里直接调；不写时 EyeView 有默认值。 -->
+    <com.lhht.xiaozhi.views.EyeView
+        android:id="@+id/eyeView"
+        android:layout_width="220dp"
+        android:layout_height="120dp"
         app:layout_constraintBottom_toTopOf="@id/userInputContainer"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

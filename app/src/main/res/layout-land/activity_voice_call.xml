@@ -15,17 +15,6 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- 视频播放层 -->
-    <VideoView
-        android:id="@+id/videoBackground"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent"
-        android:visibility="visible"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
-
     <!-- 通话状态文本 -->
     <TextView
         android:id="@+id/callStatusText"
@@ -38,14 +27,15 @@
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
 
-    <!-- Emoji显示 -->
-    <TextView
-        android:id="@+id/emojiText"
-        android:layout_width="wrap_content"
+    <!-- 表情眼睛（Nomi 风格），已替代原来的 emojiText。
+         本页被 screenOrientation="landscape" 锁死，实际生效的是这份横屏布局。
+         横屏纵向空间紧，用 constrainedHeight 让它在空间不够时自动收窄，
+         而不是硬撑出去压到下面的输入区。 -->
+    <com.lhht.xiaozhi.views.EyeView
+        android:id="@+id/eyeView"
+        android:layout_width="200dp"
         android:layout_height="wrap_content"
-        android:textSize="200sp"
-        android:textColor="#00FFFFFF"
-        android:visibility="gone"
+        app:layout_constrainedHeight="true"
         app:layout_constraintBottom_toTopOf="@id/userInputContainer"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -98,7 +88,7 @@
         android:layout_height="wrap_content"
         android:layout_marginBottom="32dp"
         android:padding="16dp"
-        app:layout_constraintBottom_toBottomOf="@+id/videoBackground">
+        app:layout_constraintBottom_toBottomOf="parent">
 
         <ImageView
             android:id="@+id/userAvatar"
