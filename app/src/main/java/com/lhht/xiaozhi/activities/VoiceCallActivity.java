@@ -32,6 +32,7 @@ import com.lhht.xiaozhi.utils.AudioRouteManager;
 import com.lhht.xiaozhi.activities.BtThread.ConnectedThread;
 import com.lhht.xiaozhi.services.BluetoothService;
 import com.lhht.xiaozhi.settings.SettingsManager;
+import com.lhht.xiaozhi.views.EyeView;
 import com.lhht.xiaozhi.views.WaveformView;
 import com.lhht.xiaozhi.websocket.WebSocketManager;
 import vip.inode.demo.opusaudiodemo.utils.OpusUtils;
@@ -97,6 +98,8 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private TextView aiMessageText;
     private TextView recognizedText;
     private TextView callStatusText;
+    /** 表情眼睛，由 TTS 消息里带的 emoji 驱动 */
+    private EyeView eyeView;
     //很可能是一个自定义的类，用于表示波形视图。这个类可能继承自Android中的View类或其他视图类，用于在界面上绘制波形数据
     private WaveformView aiWaveformView;
     private WaveformView userWaveformView;
@@ -231,6 +234,7 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         aiMessageText = findViewById(R.id.aiMessageText);
         recognizedText = findViewById(R.id.recognizedText);
         callStatusText = findViewById(R.id.callStatusText);
+        eyeView = findViewById(R.id.eyeView);
         aiWaveformView = findViewById(R.id.aiWaveformView);
         userWaveformView = findViewById(R.id.userWaveformView);
         muteButton = findViewById(R.id.muteButton);
@@ -822,6 +826,14 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             JSONObject jsonMessage = new JSONObject(message);
             String type = jsonMessage.getString("type");
 
+            // 情绪字段可能挂在任意一种消息上（llm / tts 都见过），
+            // 所以在 switch 之前统一处理一次，而不是绑死在某个 type 上 ——
+            // 之前写死只从 tts 正文里抠 emoji，llm 消息整个被丢掉了
+            String emotion = jsonMessage.optString("emotion", "");
+            if (!emotion.isEmpty()) {
+                updateEmotionByName(emotion);
+            }
+
             switch (type) {
                 case "stt":
                     String recognizedText = jsonMessage.getString("text");
@@ -842,6 +854,12 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
 
                 case "action":
                     handleActionMessage(jsonMessage);
+                    break;
+
+                default:
+                    // ⚠️ 临时诊断，定位完就删。
+                    // 走到这里说明消息确实到了 onMessage，只是 switch 没接住 —— llm 正是这种情况。
+                    Toast.makeText(this, "未处理的消息 type=" + type, Toast.LENGTH_SHORT).show();
                     break;
             }
         } catch (Exception e) {
@@ -883,8 +901,8 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 case "sentence_start":
                     String text = message.getString("text");
                     String[] parts = extractEmojiAndText(text);
-                    // parts[0] 是 emoji，暂时丢弃 —— Phase 2 会把它接到 EyeView 上驱动表情。
-                    // 拆分这一步不能省：不拆的话 emoji 会跟着正文一起显示到 aiMessageText 里。
+                    String emoji = parts[0];
+                    // 拆分这一步不能省：不拆的话 emoji 会跟着正文一起显示到 aiMessageText 里
                     String cleanText = parts[1];
 
                     if (speechStartTime > 0) {
@@ -916,16 +934,28 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                         order = 'h';
                     }
 
+                    // 服务端给了 emotion 字段就以它为准；没给才退回解析正文里的 emoji。
+                    //
+                    // ⚠️ 这里必须再判一次 emoji 非空：tts 消息通常既没有 emotion 字段、
+                    // 正文里也没有 emoji，此时 emoji 是空串，而空串会被解析成 NEUTRAL ——
+                    // 结果就是上一条 llm 刚设好的表情，被紧随其后的 tts 直接抹平，
+                    // 看起来永远是一个状态。
+                    if (!message.has("emotion") && !emoji.isEmpty()) {
+                        updateEmotionByEmoji(emoji);
+                    }
                     updateCallStatus("AI正在说话...");
                     break;
 
                 case "end":
                     updateCallStatus("正在通话中...");
+                    // 说完了回到常态，否则最后一个表情会一直挂在脸上
+                    resetEmotion();
                     break;
 
                 case "error":
                     String error = message.optString("error", "未知错误");
                     updateCallStatus("TTS错误: " + error);
+                    resetEmotion();
                     break;
             }
         } catch (Exception e) {
@@ -953,6 +983,42 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         } catch (Exception e) {
             Log.e("VoiceCall-Action", "处理动作消息失败", e);
         }
+    }
+
+    /**
+     * 用服务端消息里的 {@code emotion} 字段驱动眼睛表情（如 "happy" / "laughing"）。
+     *
+     * <p>这是主路径 —— 服务端已经给出明确答案，不需要客户端再从正文里猜。
+     *
+     * <p>{@link EyeView} 内部会自己切回主线程，这里不用再 post。
+     */
+    private void updateEmotionByName(String name) {
+        // ⚠️ 临时诊断，定位完就删。
+        // 用 Toast 而不是日志：不受 logcat 的级别过滤 / 暂停 / tag 列表影响，屏幕上一眼可见。
+        // 顺带把 eyeView 是否为空也带上 —— 一次就能区分"代码没跑"和"控件没拿到"。
+        Toast.makeText(this, "emotion: " + name
+                + (eyeView == null ? "  ⚠️eyeView=null" : ""), Toast.LENGTH_SHORT).show();
+
+        Log.d("VoiceCall-Emotion", "应用 emotion = " + name);
+        if (eyeView == null) return;
+        eyeView.setEmotionByName(name);
+    }
+
+    /**
+     * 解析正文里的 emoji 兜底。只在这条消息<b>没有</b> emotion 字段时才用。
+     *
+     * <p>靠猜是不可靠的：LLM 不吐 emoji 就完全没表情，
+     * 而且同一个 emoji 在不同语境下未必是同一种情绪。
+     */
+    private void updateEmotionByEmoji(String emoji) {
+        if (eyeView == null) return;
+        eyeView.setEmotionByEmoji(emoji);
+    }
+
+    /** 回到常态。不主动复位的话，上一个表情会一直挂在脸上直到下一句话。 */
+    private void resetEmotion() {
+        if (eyeView == null) return;
+        eyeView.setEmotion(EyeView.Emotion.NEUTRAL);
     }
 
     private String[] extractEmojiAndText(String text) {

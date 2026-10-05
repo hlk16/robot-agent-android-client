@@ -2,7 +2,19 @@
 
 > 目标页面：`VoiceCallActivity` / `activity_voice_call.xml`
 > 撰写日期：2026-10-02
-> 状态：**计划，未开工**
+> 状态：**Phase 1、Phase 2 已实现**；Phase 3（人脸追踪）、Phase 4（音频联动）未开工
+
+---
+
+## 实现记录（与计划的偏差）
+
+- **Phase 1**：眼型最初用 `drawRoundRect` 画圆角矩形胶囊。计划 §5.1 里写的"圆角半径是关键参数"就是这个阶段。
+- **Phase 2 改动**：圆角矩形**表达不了弯月眼**，所以改成了「上眼睑 + 下眼睑两条三次贝塞尔围成的闭合轮廓」。
+  做法是让两条曲线在眼角处的切线都指向竖直方向，轮廓因此处处平滑、两端自然收成带点尖的眼角。
+  好处是**所有形态参数连续**：弯月眼不是另一套画法，只是"高度压扁 + 两端下沉"的同一个轮廓，
+  所以情绪之间可以平滑插值，不需要在两个图元之间做 cross-fade。
+  计划 §5.2 的代码骨架是按圆角矩形写的，看代码以 [EyeView.java](app/src/main/java/com/lhht/xiaozhi/views/EyeView.java) 为准。
+- **光晕**：因为形状变成了 Path，原来的"放大矩形"改成 `canvas.scale()` 后重绘同一个 Path。
 
 ---
 
@@ -296,22 +308,31 @@ public class EyeView extends View {
 - **动画用 `Choreographer` 而不是 `ValueAnimator`** —— 眼睛的状态是连续的（注视点、眼睑开合、情绪插值），用一堆并行的 `ValueAnimator` 会很难协调，而且每帧要跑多个 evaluator。
 - **`onDetachedFromWindow` 里 `removeFrameCallback`**，否则页面退出后还在烧电。这个是硬性要求，LeakCanary 已经在依赖里了，会直接报。
 
-### 5.3 情绪 → 眼睛形态映射
+### 5.3 情绪来源（已按实际协议修正）
 
-服务端发的 emoji 是现成的输入，建议映射表：
+**原计划写的是"解析服务端发的 emoji"，这是错的。** 服务端消息里本来就有结构化的
+`emotion` 字段（`{"type":"llm", "text":"😊", "emotion":"happy"}`），
+客户端完全不需要从正文里猜。
 
-| emoji | 眼睛 | 实现要点 |
-|---|---|---|
-| 😊 🙂 😄 | 弯月（∩） | 下眼睑上抬，眼型从竖直变横向弧形 |
-| 😮 😲 | 瞳孔放大 | 高光点半径 ×1.5 |
-| 😢 😭 | 下垂 | 眼型整体下移 + 外侧向下倾斜 |
-| 😠 😡 | 压扁 + 内倾 | 上眼睑下压，眼睛向内旋转几度 |
-| 😴 😪 | 闭眼 | 上眼睑压到底，保持而非一闪 |
-| 🤔 | 一只眼半闭 | 左右眼睑开合度不对称 |
-| 🤔 🧐 | 视线偏移 | 注视点强制推到一侧 |
-| 无 / 未知 | 常态圆角矩形 | — |
+所以现在：
 
-映射表放 `EyeState` 里做成静态查找，未知 emoji 一律回落 `NEUTRAL`，**不要 crash、不要留空白**。
+- **主路径**：`onMessage` 里读 `emotion` 字段，`EyeView.Emotion` 的**枚举名与服务端取值一一对应**（21 个对 21 个），直接 `valueOf`，不维护第二张映射表。
+- **兜底**：这条消息没有 `emotion` 字段时，才退回解析正文里的 emoji。
+- 认不出来的值一律回落 `NEUTRAL`，**不 crash、不卡住**。
+
+服务端取值（21 个）：
+
+| | | | |
+|---|---|---|---|
+| `neutral` 😶 | `happy` 🙂 | `laughing` 😆 | `funny` 😂 |
+| `loving` 😍 | `kissy` 😘 | `confident` 😏 | `cool` 😎 |
+| `winking` 😉 | `silly` 😜 | `sad` 😔 | `angry` 😠 |
+| `crying` 😭 | `surprised` 😲 | `shocked` 😱 | `embarrassed` 😳 |
+| `thinking` 🤔 | `confused` 🙄 | `relaxed` 😌 | `sleepy` 😴 |
+| `delicious` 🤤 | | | |
+
+具体的形态参数在 [EyeView.java](app/src/main/java/com/lhht/xiaozhi/views/EyeView.java) 的 `applyEmotion()` 里，
+每种情绪五个数：`lidOpen` / `widthScale` / `heightScale` / `bow` / `tilt` / `offsetY`。
 
 ---
 
