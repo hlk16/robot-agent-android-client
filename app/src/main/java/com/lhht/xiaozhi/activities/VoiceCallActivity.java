@@ -857,9 +857,10 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                     break;
 
                 default:
-                    // ⚠️ 临时诊断，定位完就删。
-                    // 走到这里说明消息确实到了 onMessage，只是 switch 没接住 —— llm 正是这种情况。
-                    Toast.makeText(this, "未处理的消息 type=" + type, Toast.LENGTH_SHORT).show();
+                    // 服务端会发一些客户端不处理的类型（llm / hello 等）。
+                    // 这里留一条日志而不是完全静默 —— 之前 llm 被整个丢掉就是因为
+                    // switch 没有 default，排查时很久才发现消息根本没被接住。
+                    Log.d("VoiceCall", "未处理的消息类型: " + type);
                     break;
             }
         } catch (Exception e) {
@@ -993,13 +994,6 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
      * <p>{@link EyeView} 内部会自己切回主线程，这里不用再 post。
      */
     private void updateEmotionByName(String name) {
-        // ⚠️ 临时诊断，定位完就删。
-        // 用 Toast 而不是日志：不受 logcat 的级别过滤 / 暂停 / tag 列表影响，屏幕上一眼可见。
-        // 顺带把 eyeView 是否为空也带上 —— 一次就能区分"代码没跑"和"控件没拿到"。
-        Toast.makeText(this, "emotion: " + name
-                + (eyeView == null ? "  ⚠️eyeView=null" : ""), Toast.LENGTH_SHORT).show();
-
-        Log.d("VoiceCall-Emotion", "应用 emotion = " + name);
         if (eyeView == null) return;
         eyeView.setEmotionByName(name);
     }

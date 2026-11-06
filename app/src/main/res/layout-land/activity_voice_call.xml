@@ -31,15 +31,20 @@
          本页被 screenOrientation="landscape" 锁死，实际生效的是这份横屏布局。
          横屏纵向空间紧，用 constrainedHeight 让它在空间不够时自动收窄，
          而不是硬撑出去压到下面的输入区。 -->
+    <!-- 垂直方向直接相对整屏定位，不再夹在 AI 回复区和输入区之间。
+         那两个容器的高度会随内容变化，眼睛的位置就跟着飘；而且夹出来的空间不够时，
+         constrainedHeight 会把 120dp 的高度压小，眼睛就从竖胶囊被压成了圆。
+         固定在屏高 42% 处，位置和尺寸都不再受邻居影响。 -->
     <com.lhht.xiaozhi.views.EyeView
         android:id="@+id/eyeView"
         android:layout_width="200dp"
         android:layout_height="wrap_content"
         app:layout_constrainedHeight="true"
-        app:layout_constraintBottom_toTopOf="@id/userInputContainer"
+        app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@id/aiResponseContainer" />
+        app:layout_constraintTop_toTopOf="parent"
+        app:layout_constraintVertical_bias="0.42" />
 
     <!-- AI回复内容区域 -->
     <androidx.constraintlayout.widget.ConstraintLayout

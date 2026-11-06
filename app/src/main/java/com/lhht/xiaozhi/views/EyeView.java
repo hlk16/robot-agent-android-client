@@ -11,7 +11,6 @@ import android.util.Log;
 import android.util.TypedValue;
 import android.view.Choreographer;
 import android.view.View;
-import android.widget.Toast;
 
 import java.util.Locale;
 
@@ -75,7 +74,7 @@ public class EyeView extends View {
     // ---- 尺寸：全部按视图大小的比例算，换布局尺寸不用改代码 ----
     private static final float EYE_WIDTH_RATIO = 0.25f;   // 单只眼宽 / 视图宽
     private static final float EYE_HEIGHT_RATIO = 0.62f;  // 单只眼高 / 视图高
-    private static final float EYE_GAP_RATIO = 1.85f;     // 两只眼中心距 / 单眼宽
+    private static final float EYE_GAP_RATIO = 2.40f;     // 两只眼中心距 / 单眼宽
 
     /**
      * 眼型控制点向内的水平收拢比例。
@@ -123,12 +122,6 @@ public class EyeView extends View {
     private final Paint eyePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** 复用，绝不在 onDraw 里 new —— 每帧重建 Path 会把主线程拖垮。 */
     private final Path eyePath = new Path();
-
-    // ⚠️ 临时诊断，定位完连同 onDraw 里那段一起删。
-    // 为什么不继续用 Toast：这台是华为设备，EMUI 对应用主动弹出的 Toast
-    // 管得很严，可能被系统静默丢弃 —— 那样再怎么测都得不到有效信号。
-    // 直接画在自己画布上，系统拦不掉。
-    private final Paint debugPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
 
     /** 闭眼时至少保留的厚度（半高）。归零的话眼睛会缩成一条看不见的线。 */
     private float minHalfHeight;
@@ -217,15 +210,6 @@ public class EyeView extends View {
 
         minHalfHeight = dp(1.5f);
 
-        // ⚠️ 临时诊断，定位完就删
-        debugPaint.setColor(Color.RED);
-        debugPaint.setTextSize(dp(14f));
-
-        // ⚠️ 临时诊断，定位完就删。
-        // 这一行不依赖任何消息、任何状态 —— 页面一打开就会弹。
-        // 它不弹，就说明设备上跑的不是新编译的包，别的都不用查了。
-        Toast.makeText(getContext(), "EyeView 已加载（新包）", Toast.LENGTH_LONG).show();
-
         setEmotionInternal(Emotion.NEUTRAL);
         // 初始就位，避免进场时从"零形态"展开
         leftExpr.copyFrom(targetLeft);
@@ -311,7 +295,6 @@ public class EyeView extends View {
     }
 
     private void setEmotionInternal(Emotion emotion) {
-        Log.d(TAG, "应用情绪: " + emotion);
         this.emotion = emotion;
         applyEmotion(emotion, targetLeft, true);
         applyEmotion(emotion, targetRight, false);
@@ -784,11 +767,6 @@ public class EyeView extends View {
 
         drawEye(canvas, leftCx, centerY, eyeW, eyeH, leftExpr);
         drawEye(canvas, rightCx, centerY, eyeW, eyeH, rightExpr);
-
-        // ⚠️ 临时诊断，定位完就删。
-        // 左上角画出当前情绪名。这段代码只存在于新版本里 ——
-        // 字出现了就证明新包装上了，同时直接告诉你眼睛收到的是哪个情绪。
-        canvas.drawText(emotion.name(), 4f, dp(16f), debugPaint);
     }
 
     private void drawEye(Canvas canvas, float cx, float cy,
