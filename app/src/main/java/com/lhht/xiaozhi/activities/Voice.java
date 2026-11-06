@@ -756,9 +756,12 @@ public class Voice extends AppCompatActivity implements WebSocketManager.WebSock
         if (webSocketManager != null && webSocketManager.isConnected()) {
             try {
                 JSONObject jsonMessage = new JSONObject();
-                jsonMessage.put("type", "interrupt");
+                // 协议规定是 "abort"，不是 "interrupt"
+                jsonMessage.put("type", "abort");
                 webSocketManager.sendMessage(jsonMessage.toString());
                 updateCallStatus("已打断AI回答");
+                // 立刻停掉本地还在播放的缓冲音频
+                stopCurrentAudio();
             } catch (Exception e) {
                 Log.e("VoiceCall", "发送中断消息失败", e);
             }

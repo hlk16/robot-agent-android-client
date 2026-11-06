@@ -684,9 +684,14 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         if (webSocketManager != null && webSocketManager.isConnected()) {
             try {
                 JSONObject jsonMessage = new JSONObject();
-                jsonMessage.put("type", "interrupt");
+                // 协议规定是 "abort"，不是 "interrupt"。
+                // 写错的话服务端会当未知消息忽略，打断实际不生效。
+                jsonMessage.put("type", "abort");
                 webSocketManager.sendMessage(jsonMessage.toString());
                 updateCallStatus("已打断AI回答");
+                // 本地缓冲里可能还有已解码、没播完的音频，立刻停掉；
+                // 否则服务端虽然不发了，手里这段还会继续说下去
+                stopCurrentAudio();
             } catch (Exception e) {
                 Log.e("VoiceCall", "发送中断消息失败", e);
             }
