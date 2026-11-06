@@ -133,7 +133,10 @@ sequenceDiagram
 | 连接后 | 自动发送 `HELLO` |
 | 距离上报 | `DISTANCE:123.4`（像素，1 位小数） |
 
-完整字节表与单片机侧解析示例见 [BLUETOOTH_PROTOCOL.md](BLUETOOTH_PROTOCOL.md)。
+完整字节表与单片机侧解析示例见 [BLUETOOTH_PROTOCOL.md](BLUETOOTH_PROTOCOL.md)（v1 现状）。
+
+> ⚠️ v1 没有帧定界、握手和心跳。替代规范见 [BLUETOOTH_PROTOCOL_V2.md](BLUETOOTH_PROTOCOL_V2.md)（XZ-Link/1），
+> 过渡方案与 App 侧改造清单在该文档第 9、11 节。
 
 ---
 

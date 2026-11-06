@@ -1,4 +1,7 @@
-# 机器人 Agent 蓝牙控制协议
+# 机器人 Agent 蓝牙控制协议（v1 · 现状）
+
+> ⚠️ **本文档描述的是 v1（裸单字符）的现状，已有一份替代规范：[BLUETOOTH_PROTOCOL_V2.md](BLUETOOTH_PROTOCOL_V2.md)（XZ-Link/1）。**
+> v1 保留在过渡期内使用；v2 完成后本文档连同 v2 第 9 节一并删除。
 
 > 适用代码：`app/src/main/java/com/lhht/xiaozhi/services/BluetoothService.java`
 > 说明：本文档描述的是**当前代码实际实现**的协议，不是理想设计。已知问题见第 6 节。
