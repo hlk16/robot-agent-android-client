@@ -32,6 +32,7 @@ import com.lhht.xiaozhi.utils.AudioRouteManager;
 import com.lhht.xiaozhi.activities.BtThread.ConnectedThread;
 import com.lhht.xiaozhi.services.BluetoothService;
 import com.lhht.xiaozhi.settings.SettingsManager;
+import com.lhht.xiaozhi.face.FaceTracker;
 import com.lhht.xiaozhi.views.EyeView;
 import com.lhht.xiaozhi.views.WaveformView;
 import com.lhht.xiaozhi.websocket.WebSocketManager;
@@ -39,6 +40,7 @@ import vip.inode.demo.opusaudiodemo.utils.OpusUtils;
 
 import org.json.JSONObject;
 import org.json.JSONArray;
+import org.opencv.android.OpenCVLoader;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.BlockingQueue;
@@ -100,6 +102,8 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private TextView callStatusText;
     /** 表情眼睛，由 TTS 消息里带的 emoji 驱动 */
     private EyeView eyeView;
+    /** 人脸追踪：驱动眼睛的视线方向。仅在摄像头预览开启时工作。 */
+    private FaceTracker faceTracker;
     //很可能是一个自定义的类，用于表示波形视图。这个类可能继承自Android中的View类或其他视图类，用于在界面上绘制波形数据
     private WaveformView aiWaveformView;
     private WaveformView userWaveformView;
@@ -340,14 +344,15 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             return;
         }
 
-        if (!isPreviewStarted) {
-            startCameraPreview();
-        } else {
+        // isPreviewStarted 的翻转只发生在 start/stopCameraPreview 内部，这里不要再翻一次。
+        // 原实现是「里面翻一次、外面又翻一次」：关闭时 stopCameraPreview() 刚把它置为
+        // false，下一行 !isPreviewStarted 又翻回 true，于是 PreviewView 被设成 VISIBLE
+        // 而摄像头其实已经解绑 —— 最后一帧没人去擦，就留在屏幕上了。
+        if (isPreviewStarted) {
             stopCameraPreview();
+        } else {
+            startCameraPreview();
         }
-        isPreviewStarted = !isPreviewStarted;
-        frontCameraPreview.setVisibility(isPreviewStarted ? View.VISIBLE : View.GONE);
-        previewButton.setImageResource(isPreviewStarted ? R.drawable.baseline_videocam_24 : R.drawable.baseline_videocam_24);
     }
 
     @Override
@@ -363,6 +368,12 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     }
 
     private void startCameraPreview() {
+        // 先显示出来：PreviewView 要先完成布局，getSurfaceProvider() 才有可用的 surface
+        frontCameraPreview.setVisibility(View.VISIBLE);
+
+        // 摄像头是用户主动打开的，此时才初始化人脸追踪
+        initFaceTracker();
+
         if (cameraProvider != null) {
             bindCameraPreview();
             return;
@@ -379,8 +390,42 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
             } catch (ExecutionException | InterruptedException e) {
                 Log.e("CameraPreview", "Error getting camera provider: " + e.getMessage());
                 Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
+                stopCameraPreview();//拿不到相机服务同样要收尾，别留个空框
             }
         }, ContextCompat.getMainExecutor(this));
+    }
+
+    /**
+     * 初始化人脸追踪。
+     *
+     * <p>OpenCV 的 native 库进程内只需加载一次；模型首次使用时会从 assets
+     * 释放 54 KB 到 filesDir 并加载。
+     *
+     * <p>任何一步失败都只是让追踪不可用，不影响摄像头预览与视觉大模型功能。
+     */
+    private void initFaceTracker() {
+        if (faceTracker != null) return;
+
+        if (!OpenCVLoader.initDebug()) {
+            Log.e("FaceTracker", "OpenCV 初始化失败，人脸追踪不可用");
+            return;
+        }
+
+        FaceTracker tracker = new FaceTracker(this, (nx, ny, found) -> {
+            // setGazeTarget 内部会自己切回主线程
+            if (eyeView != null) {
+                eyeView.setGazeTarget(nx, ny, found);
+            }
+        });
+
+        if (!tracker.isAvailable()) {
+            Log.w("FaceTracker", "模型不可用，人脸追踪关闭");
+            tracker.shutdown();
+            return;
+        }
+
+        faceTracker = tracker;
+        Log.d("FaceTracker", "人脸追踪已启动");
     }
 
     private void bindCameraPreview() {
@@ -392,7 +437,15 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
     private void stopCameraPreview() {
         if (cameraProvider != null) {
             cameraProvider.unbindAll();
-            isPreviewStarted = false;
+        }
+        // isPreviewStarted 要放在 if 外面：原来写在里面，
+        // cameraProvider 还是 null（从没启动成功过）时就复位不了
+        isPreviewStarted = false;
+        // 解绑只停止出帧，PreviewView 不会自己擦掉最后一帧 ——
+        // 它内部是 SurfaceView，最后那块 buffer 会一直留在那个图层里。
+        // 必须显式隐藏让 surface 销毁，残留画面才会真正消失。
+        if (frontCameraPreview != null) {
+            frontCameraPreview.setVisibility(View.GONE);
         }
     }
 
@@ -842,6 +895,9 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                     }
                     updateRecognizedText(recognizedText);
                     stopCurrentAudio();
+                    // 用户开口了，说明上一轮已经结束。兜底复位一次，
+                    // 不依赖服务端一定会发 stop。
+                    resetEmotion();
                     break;
 
                 case "tts":
@@ -947,6 +1003,9 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                     updateCallStatus("AI正在说话...");
                     break;
 
+                // 小智协议里一轮 TTS 结束发的是 "stop"，不是 "end"。
+                // 之前只接了 "end"，所以 resetEmotion() 从来没执行过 —— 表情会一直挂着。
+                case "stop":
                 case "end":
                     updateCallStatus("正在通话中...");
                     // 说完了回到常态，否则最后一个表情会一直挂在脸上
@@ -1211,6 +1270,11 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         if (mainHandler != null) {
             mainHandler.removeCallbacksAndMessages(null);
         }
+        // 释放检测线程与 OpenCV 的 native 资源
+        if (faceTracker != null) {
+            faceTracker.shutdown();
+            faceTracker = null;
+        }
         super.onDestroy();
 
         if (btServiceBound) {
@@ -1371,20 +1435,32 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
                 .build();
 
         imageAnalysis.setAnalyzer(cameraExecutor, imageProxy -> {
-            long currentTime = System.currentTimeMillis();
-            if (currentTime - lastFrameCaptureTime < FRAME_CAPTURE_INTERVAL_MS) {
+            long now = System.currentTimeMillis();
+
+            // 人脸追踪和视觉抽帧是两条独立频率的消费者，不能共用同一个节流：
+            // 追踪要的是 8fps 左右的高频小图，视觉模型要的是间隔更长的完整帧。
+            boolean wantFace = faceTracker != null && faceTracker.shouldProcess(now);
+
+            if (now - lastFrameCaptureTime < FRAME_CAPTURE_INTERVAL_MS) {
+                // 这一帧不用给视觉模型，但可能要给人脸追踪
+                if (wantFace && faceTracker.submit(imageProxy)) {
+                    return;   // 追踪器接管了 ImageProxy，由它负责 close
+                }
                 imageProxy.close();
                 return;
             }
 
-            lastFrameCaptureTime = currentTime;
+            // 视觉大模型的抽帧（原有逻辑）
+            lastFrameCaptureTime = now;
             byte[] yuvData = imageProxyToYuv420(imageProxy);
             if (yuvData != null) {
-                int width = imageProxy.getWidth();
-                int height = imageProxy.getHeight();
-                frameCache.addFrame(yuvData, width, height);
+                frameCache.addFrame(yuvData, imageProxy.getWidth(), imageProxy.getHeight());
             }
 
+            // 同一帧顺便喂给人脸追踪，避免为了追踪再单独取一帧
+            if (wantFace && faceTracker.submit(imageProxy)) {
+                return;       // 追踪器接管了 ImageProxy，由它负责 close
+            }
             imageProxy.close();
         });
 
@@ -1402,6 +1478,8 @@ public class VoiceCallActivity extends AppCompatActivity implements WebSocketMan
         } catch (Exception e) {
             Log.e("CameraPreview", "绑定相机失败: " + e.getMessage());
             Toast.makeText(this, "无法启动前置摄像头", Toast.LENGTH_SHORT).show();
+            // 绑定失败就按「关闭」收尾，否则会留下一个什么都不显示的预览框
+            stopCameraPreview();
         }
     }
 

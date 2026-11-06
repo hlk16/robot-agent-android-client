@@ -72,9 +72,15 @@ public class EyeView extends View {
     private static final String TAG = "EyeView";
 
     // ---- 尺寸：全部按视图大小的比例算，换布局尺寸不用改代码 ----
-    private static final float EYE_WIDTH_RATIO = 0.25f;   // 单只眼宽 / 视图宽
-    private static final float EYE_HEIGHT_RATIO = 0.62f;  // 单只眼高 / 视图高
-    private static final float EYE_GAP_RATIO = 2.40f;     // 两只眼中心距 / 单眼宽
+    //
+    // 视图必须比"眼睛本身占的范围"大出一圈，否则视线跟随会把眼睛移动出画布边界，
+    // 被 View 自身的 Canvas 裁掉（View 画不出自己的 bounds）。
+    // 需要的余量 = 最大视线位移 + 辉光外扩：
+    //   水平 0.80×50 + 25×0.30 ≈ 47.5dp，垂直 0.35×74 + 37×0.30 ≈ 37dp
+    // 所以按 280×160dp 的视图、50×74dp 的眼睛来配比例。
+    private static final float EYE_WIDTH_RATIO = 0.179f;  // 单只眼宽 / 视图宽 ≈ 50dp
+    private static final float EYE_HEIGHT_RATIO = 0.46f;  // 单只眼高 / 视图高 ≈ 74dp
+    private static final float EYE_GAP_RATIO = 2.40f;     // 两只眼中心距 / 单眼宽 ≈ 120dp
 
     /**
      * 眼型控制点向内的水平收拢比例。
@@ -116,8 +122,8 @@ public class EyeView extends View {
     private static final int[] HALO_ALPHA = {16, 42};
 
     // ---- 默认尺寸（wrap_content 时用）----
-    private static final float DEFAULT_WIDTH_DP = 220f;
-    private static final float DEFAULT_HEIGHT_DP = 120f;
+    private static final float DEFAULT_WIDTH_DP = 280f;
+    private static final float DEFAULT_HEIGHT_DP = 160f;
 
     private final Paint eyePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     /** 复用，绝不在 onDraw 里 new —— 每帧重建 Path 会把主线程拖垮。 */
@@ -143,6 +149,45 @@ public class EyeView extends View {
     private long nextBlinkAt;
     /** 呼吸相位，[0,1)。 */
     private float breathPhase;
+
+    // ---- 视线跟随 ----
+    /** 目标视线，用户视角 [-1,1]，由人脸追踪写入。 */
+    private float targetGazeX;
+    private float targetGazeY;
+    /** 平滑后的实际视线，绘制用。 */
+    private float gazeX;
+    private float gazeY;
+    /** 最近一次检测到人脸的时刻，用于丢失容忍。 */
+    private long lastFaceSeenAt = -1L;
+
+    /** 连续这么久检测不到人脸，才让视线缓慢回中。 */
+    private static final long FACE_LOST_GRACE_MS = 600;
+    /**
+     * 视线的最大位移，相对单眼宽/高。
+     *
+     * <p>人脸一般只在画面中间附近移动，归一化后的 nx 通常只有 ±0.3 左右，
+     * 所以分两步放大：先在 {@link #setGazeTarget} 里乘增益，再在这里乘位移范围。
+     */
+    private static final float GAZE_X_RANGE = 0.80f;
+    private static final float GAZE_Y_RANGE = 0.35f;
+
+    /**
+     * 呈现层的夸张系数。
+     *
+     * <p>追踪器输出的 nx/ny 是"人脸在画面里的真实相对位置"，相机视野比人眼窄，
+     * 人稍微偏头就出画了，所以原始值天然偏小。这里放大到 1.6 / 1.3 倍后再饱和，
+     * 小幅度移动也能看出眼睛在跟。
+     */
+    private static final float GAZE_X_GAIN = 1.9f;
+    private static final float GAZE_Y_GAIN = 1.5f;
+
+    /**
+     * 视线平滑的时间常数，比情绪（90ms）短得多。
+     *
+     * <p>情绪是"慢慢化过去"才自然；视线是跟手动作，拖久了就是延迟。
+     * 用 45ms：约 135ms 到位，跟得上头部移动，同时仍能吃掉检测器的帧间抖动。
+     */
+    private static final float GAZE_TAU_MS = 45f;
 
     private long lastFrameMs;
 
@@ -292,6 +337,34 @@ public class EyeView extends View {
 
     public Emotion getEmotion() {
         return emotion;
+    }
+
+    /**
+     * 设置视线目标（人脸追踪调用）。
+     *
+     * <p>没有瞳孔，所以"看向某处"就是两只眼睛整体朝那个方向偏移一点。
+     *
+     * @param nx    归一化 X，[-1,1]，<b>已经是用户视角</b>（镜像由检测端处理）
+     * @param ny    归一化 Y，[-1,1]，正值向下
+     * @param found 本帧是否检测到人脸。传 false 时<b>不会立刻回中</b>，
+     *              而是等 {@link #FACE_LOST_GRACE_MS} 之后才缓慢归位 ——
+     *              级联分类器偶尔漏一两帧是常态，瞬间回中会让眼睛一惊一乍。
+     */
+    public void setGazeTarget(float nx, float ny, boolean found) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            post(() -> setGazeTarget(nx, ny, found));
+            return;
+        }
+        if (!found) return;      // 丢失交给 step() 里的宽限期处理
+
+        // 放大到画面边缘时饱和：轻微偏头就有明显反馈，偏得多也不会飞出视图
+        targetGazeX = clamp(nx * GAZE_X_GAIN, -1f, 1f);
+        targetGazeY = clamp(ny * GAZE_Y_GAIN, -1f, 1f);
+        lastFaceSeenAt = nowMs();
+    }
+
+    private static float clamp(float v, float lo, float hi) {
+        return v < lo ? lo : (v > hi ? hi : v);
     }
 
     private void setEmotionInternal(Emotion emotion) {
@@ -686,15 +759,27 @@ public class EyeView extends View {
         // ---- 情绪插值 ----
         // 用指数逼近而不是线性插值：帧率变化时表现一致，
         // 而且永远不会有"过冲"（表情回弹一下看着很假）。
+        long dt = 100L;
         float alpha = 1f;
         if (lastFrameMs > 0L) {
-            long dt = Math.min(now - lastFrameMs, 100L);   // 卡顿时按 100ms 封顶，避免直接跳到位
+            dt = Math.min(now - lastFrameMs, 100L);   // 卡顿时按 100ms 封顶，避免直接跳到位
             alpha = 1f - (float) Math.exp(-dt / EMOTION_TAU_MS);
         }
         lastFrameMs = now;
 
         approach(leftExpr, targetLeft, alpha);
         approach(rightExpr, targetRight, alpha);
+
+        // ---- 视线跟随 ----
+        // 长时间检测不到人脸才回中；脸只是短暂漏检时保持原位
+        if (lastFaceSeenAt > 0L && now - lastFaceSeenAt > FACE_LOST_GRACE_MS) {
+            targetGazeX = 0f;
+            targetGazeY = 0f;
+        }
+        // 视线有自己的时间常数：跟手动作不能像换表情那样慢慢化过去
+        float gazeAlpha = 1f - (float) Math.exp(-dt / GAZE_TAU_MS);
+        gazeX += (targetGazeX - gazeX) * gazeAlpha;
+        gazeY += (targetGazeY - gazeY) * gazeAlpha;
 
         // ---- 呼吸 ----
         breathPhase = (now % BREATH_PERIOD_MS) / (float) BREATH_PERIOD_MS;
@@ -773,6 +858,10 @@ public class EyeView extends View {
                          float w, float h, Expression e) {
         float eyeW = w * e.widthScale;
         float eyeH = h * e.heightScale;
+
+        // 视线偏移：整只眼在眼窝范围内平移。两只眼同向移动，看起来才像"在看"
+        cx += gazeX * eyeW * GAZE_X_RANGE;
+        cy += gazeY * eyeH * GAZE_Y_RANGE;
 
         // 上眼睑随开合收缩，下眼睑基本不动 —— 真眼是上睑往下盖，
         // 不是上下对称地压扁。眨眼（blinkLid）和情绪的开合在这里相乘，

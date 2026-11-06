@@ -37,9 +37,8 @@
          固定在屏高 42% 处，位置和尺寸都不再受邻居影响。 -->
     <com.lhht.xiaozhi.views.EyeView
         android:id="@+id/eyeView"
-        android:layout_width="200dp"
-        android:layout_height="wrap_content"
-        app:layout_constrainedHeight="true"
+        android:layout_width="280dp"
+        android:layout_height="160dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

@@ -22,8 +22,8 @@
          尺寸交给布局显式指定，方便在 AS 里直接调；不写时 EyeView 有默认值。 -->
     <com.lhht.xiaozhi.views.EyeView
         android:id="@+id/eyeView"
-        android:layout_width="220dp"
-        android:layout_height="120dp"
+        android:layout_width="280dp"
+        android:layout_height="160dp"
         app:layout_constraintBottom_toTopOf="@id/userInputContainer"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
