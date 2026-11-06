@@ -4,16 +4,28 @@
 
 小智智能助手是一个基于 Android 平台的智能语音交互应用，作为机器人 Agent 系统的前端客户端，负责与云端/本地 AI 服务进行通信，实现语音对话、硬件控制等功能。
 
+## 体系构成
+
+整套系统由三部分组成，本仓库只包含**客户端**，另外两端分别在下面的位置：
+
+| 组成 | 技术栈 | 位置 |
+|---|---|---|
+| **Android 客户端** | Java / WebSocket / Camera2 / OpenCV | 本仓库 |
+| **机器人固件** | ESP32 / Arduino（`BluetoothSerial` + `ESP32Servo`） | [hard-section/arduino-code/robot.ino](hard-section/arduino-code/robot.ino) |
+| **后端服务** | Python（ASR / LLM / TTS / MCP） | [hlk16/xiaozhi-server](https://github.com/hlk16/xiaozhi-server) |
+
+三者之间的关系：客户端通过 **WebSocket** 与后端服务对话，通过**经典蓝牙 SPP** 控制单片机。
+
 ## 系统架构
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     硬件层 (FreeRTOS)                        │
+│                     硬件层 (ESP32/Arduino)                   │
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
 │  │   传感器    │  │   执行器    │  │    蓝牙模块         │  │
 │  └─────────────┘  └─────────────┘  └─────────────────────┘  │
 └──────────────────────────┬──────────────────────────────────┘
-                           │ BLE/蓝牙
+                           │ 经典蓝牙 SPP
 ┌──────────────────────────▼──────────────────────────────────┐
 │                   客户端层 (Android)                         │
 │  ┌─────────────────────────────────────────────────────┐    │
@@ -49,9 +61,16 @@
 - **回声消除 & 噪声抑制**：集成 AEC 和 NS 提升通话质量
 
 ### 2. 硬件控制
-- **蓝牙通信**：通过蓝牙与 FreeRTOS 硬件设备通信
-- **指令下发**：支持发送控制指令到硬件层
-- **状态同步**：实时接收硬件状态反馈
+- **蓝牙通信**：通过经典蓝牙 SPP 与 ESP32 单片机通信
+- **XZ-Link/1 协议**：行分隔的 ASCII 文本帧，带握手、心跳与错误码
+  （**固件已实现，客户端正在从 v1 单字符指令迁移**）
+- **握手与心跳**：`HELLO/READY` 校验协议版本，`PING/PONG` 检测链路存活
+- **失效保护**：心跳超时后单片机自动停车并回中，手机断开不会让机器人失控
+- **指令下发**：支持运动控制（`MOVE`）与 8 种机械动作（`ACT`）
+- **状态同步**：实时接收 `ACK` / `NAK` / `ACT_DONE` 等回执
+
+> 协议细节见 [BLUETOOTH_PROTOCOL_V2.md](docs/BLUETOOTH_PROTOCOL_V2.md)，
+> 从旧版单字符指令迁移的说明见该文档第 9 节。
 
 ### 3. MCP 视觉识别
 - **实时预览**：支持前置摄像头实时预览
@@ -66,6 +85,13 @@
 - **自动重连**：连接断开后自动恢复
 - **二进制数据传输**：支持音频二进制数据流传输
 
+### 5. 表情动画与人脸追踪
+- **21 种情绪表情**：与服务端 `emotion` 字段一一对应（`happy` / `laughing` / `sad` …），
+  由 `EyeView` 用贝塞尔曲线实时绘制，不依赖图片资源
+- **眨眼与过渡**：非阻塞帧循环驱动，表情切换带平滑插值
+- **人脸追踪**：前置摄像头 + OpenCV LBP 级联分类器，眼睛会跟随人脸移动
+- **姿态自适应**：按 `rotationDegrees` 校正画面方向，前置摄像头自动镜像
+
 ## 技术栈
 
 | 模块 | 技术选型 |
@@ -73,32 +99,75 @@
 | 编程语言 | Java |
 | 网络通信 | WebSocket (OkHttp) |
 | 音频处理 | AudioRecord / AudioTrack / Opus |
-| 蓝牙通信 | Android Bluetooth API |
-| 相机 | Camera2 API |
-| 视觉识别 | MCP 协议 (服务端调度) |
+| 蓝牙通信 | Android Bluetooth API（经典蓝牙 SPP） |
+| 相机 | Camera2 API / CameraX ImageAnalysis |
+| 视觉识别 | MCP 协议（服务端调度） |
+| 计算机视觉 | OpenCV 4.5（LBP 级联分类器） |
+| 机器人固件 | ESP32 / Arduino（C++） |
 | 构建工具 | Gradle |
 
 ## 项目结构
 
 ```
-app/src/main/java/com/lhht/xiaozhi/
-├── activities/                 # Activity 界面层
-│   ├── MainActivity.java       # 主界面（文字对话）
-│   ├── Voice.java              # 语音通话界面
-│   ├── ChatActivity.java       # 聊天界面
-│   ├── SettingsActivity.java   # 设置界面
-│   └── MenuActivity.java       # 菜单界面
-├── websocket/                  # WebSocket 通信层
-│   └── WebSocketManager.java   # WebSocket 连接管理
-├── settings/                   # 配置管理
-│   └── SettingsManager.java    # 用户配置持久化
-├── views/                      # 自定义视图
-│   └── WaveformView.java       # 音频波形显示
-├── api/                        # 第三方 API 集成
-│   └── ImageRecognitionManager.java  # 图像识别
-└── BtThread/                   # 蓝牙通信线程
-    └── ConnectedThread.java    # 蓝牙连接线程
+xiaozhi-android-client/
+├── app/                                # Android 客户端
+├── hard-section/
+│   └── arduino-code/
+│       └── robot.ino                   # ESP32 机器人固件（XZ-Link/1 协议）
+├── docs/                               # 协议与设计文档
+└── README.md
 ```
+
+```
+app/src/main/java/com/lhht/xiaozhi/
+├── MyApp.java                      # Application 入口
+├── activities/                     # Activity 界面层
+│   ├── MainActivity.java           # 主界面（文字对话）
+│   ├── VoiceCallActivity.java      # 语音通话主界面（表情 + 人脸追踪 + 动作）
+│   ├── Voice.java                  # 语音通话界面（旧版）
+│   ├── ChatActivity.java           # 聊天界面（含 WebRTC 视频与导航）
+│   ├── BluetoothActivity.java      # 蓝牙设备连接
+│   ├── NBIOTActivity.java          # NB-IoT / MQTT 监控
+│   ├── SearchNaviActivity.java     # 目的地搜索
+│   ├── SettingsActivity.java       # 设置界面
+│   ├── MenuActivity.java           # 菜单界面
+│   ├── BtThread/
+│   │   └── ConnectedThread.java    # 蓝牙收发线程
+│   └── webrtc/
+│       ├── WebRTCManager.java      # WebRTC 音视频
+│       └── SignalingClient.java    # WebRTC 信令
+├── services/                       # 后台服务
+│   ├── BluetoothService.java       # 蓝牙前台服务
+│   ├── CameraDetectionService.java # 车道线检测
+│   ├── NavigationBackgroundService.java
+│   └── PIDController.java          # 方向控制
+├── camera/CameraManager2.java      # Camera2 封装
+├── face/                           # 人脸检测
+│   ├── FaceDetectorHolder.java     # 级联分类器加载
+│   └── FaceTracker.java            # 人脸追踪
+├── views/                          # 自定义视图
+│   ├── EyeView.java                # 机器人眼睛（21 种表情）
+│   └── WaveformView.java           # 音频波形
+├── websocket/WebSocketManager.java # WebSocket 连接管理
+├── settings/SettingsManager.java   # 用户配置持久化
+├── managers/                       # 数据与导航管理
+├── models/Message.java             # 消息模型
+├── adapters/WsUrlAdapter.java      # 服务地址历史
+└── utils/AudioRouteManager.java    # 音频路由
+```
+
+## 相关文档
+
+| 文档 | 内容 |
+|---|---|
+| [ROBOT_CONTROL_OVERVIEW.md](docs/ROBOT_CONTROL_OVERVIEW.md) | 控制链路总览：服务端 → 客户端 → 蓝牙 → 单片机 |
+| [BLUETOOTH_PROTOCOL_V2.md](docs/BLUETOOTH_PROTOCOL_V2.md) | 蓝牙协议 v2（XZ-Link/1），含帧格式、握手、心跳、失效保护 |
+| [BLUETOOTH_PROTOCOL.md](docs/BLUETOOTH_PROTOCOL.md) | 蓝牙协议 v1（裸单字符）现状与已知问题 |
+| [VOICE_ACTION_OUTPUT.md](docs/VOICE_ACTION_OUTPUT.md) | 服务端语音/动作输出契约 |
+| [CLIENT_API_ROBOT_ACTION.md](docs/CLIENT_API_ROBOT_ACTION.md) | 客户端动作接口与执行模型 |
+| [EYES_PLAN.md](docs/EYES_PLAN.md) | 表情眼睛的设计与实现记录 |
+| [PERFORMANCE_OPTIMIZATION.md](docs/PERFORMANCE_OPTIMIZATION.md) | 性能优化记录 |
+| [CODE_REVIEW.md](docs/CODE_REVIEW.md) | 代码评审与遗留问题 |
 
 ## 核心流程
 
@@ -274,5 +343,8 @@ SOFTWARE.
 
 ## 致谢
 
+- [xiaozhi-server](https://github.com/hlk16/xiaozhi-server) - 小智后端服务（本项目的服务端）
 - [Opus](https://opus-codec.org/) - 开源音频编解码器
 - [MNN](https://github.com/alibaba/MNN) - 阿里开源推理引擎
+- [OpenCV](https://opencv.org/) - 计算机视觉库（人脸检测）
+- [ESP32Servo](https://github.com/madhephaestus/ESP32Servo) - ESP32 舵机驱动
