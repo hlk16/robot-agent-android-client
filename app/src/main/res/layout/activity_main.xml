@@ -15,10 +15,12 @@
         android:elevation="4dp"
         app:layout_constraintTop_toTopOf="parent">
         <ImageButton
+            android:id="@+id/more"
             android:layout_width="wrap_content"
             android:layout_height="match_parent"
-            android:src="@drawable/baseline_density_medium_24"
-            android:id="@+id/more"/>
+            android:background="@null"
+            android:contentDescription="菜单"
+            android:src="@drawable/ic_menu_24" />
 
         <TextView
             android:id="@+id/connectionStatus"
